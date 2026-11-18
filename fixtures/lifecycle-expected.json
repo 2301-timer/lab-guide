@@ -1,0 +1,263 @@
+{
+  "fixture": "lab-guide B 阶段生命周期状态机断言基线（schema v1）",
+  "note": [
+    "本文件是 lab-triage.mjs 的**期望输出**，不是运行时输入；CLI 不会读它。",
+    "验收一律在 out/ 下的副本上跑：夹具 lifecycle-b.json 是**只读种子**，被 promote 改过就失去基线意义。",
+    "时间全部用 --now 固定（2026-11-14 / 2026-12-01），所以断言可以写死日期与天数。",
+    "不断言：绝对路径、updatedAt 的真实时钟值（未给 --now 时）、表格排版空白。",
+    "adopted 一步必须带 --profile fixtures/fake-profile：verifiedVersion 只取 profile 实测版本，读不到就拒绝迁移（不猜）。"
+  ],
+  "seedFile": "fixtures/lifecycle-b.json",
+  "workFile": "out/lifecycle-b.tmp.json",
+  "prepare": [
+    "New-Item -ItemType Directory -Force -Path out | Out-Null",
+    "Copy-Item fixtures/lifecycle-b.json out/lifecycle-b.tmp.json -Force"
+  ],
+  "restore": [
+    "Copy-Item fixtures/lifecycle-b.json out/lifecycle-b.tmp.json -Force",
+    "（或直接删除副本：Remove-Item out/lifecycle-b.tmp.json）"
+  ],
+  "seedExpectation": {
+    "total": 3,
+    "byState": { "candidate": 2, "trial": 0, "adopted": 1, "rejected": 0, "dormant": 0 },
+    "check": { "exitCode": 0 }
+  },
+  "steps": [
+    {
+      "step": 1,
+      "what": "list：三条假数据覆盖 candidate / adopted 两态",
+      "command": "node tools/lab-triage.mjs --lifecycle out/lifecycle-b.tmp.json list --now 2026-11-14",
+      "exitCode": 0,
+      "expect": {
+        "total": 3,
+        "byState": { "candidate": 2, "trial": 0, "adopted": 1, "rejected": 0, "dormant": 0 },
+        "rowsContain": ["lab-fixture-alpha", "lab-fixture-beta", "lab-fixture-gamma"]
+      }
+    },
+    {
+      "step": 2,
+      "what": "candidate → trial：trialUntil 由 --now + 14 天算出",
+      "command": "node tools/lab-triage.mjs --lifecycle out/lifecycle-b.tmp.json promote lab-fixture-alpha --to trial --reason \"符合嵌入式入门需求\" --now 2026-11-14",
+      "exitCode": 0,
+      "expect": {
+        "item": {
+          "pkg": "lab-fixture-alpha",
+          "state": "trial",
+          "since": "2026-11-14",
+          "trialUntil": "2026-11-28",
+          "watch": false,
+          "verifiedVersion": null,
+          "evidenceCount": 1
+        }
+      }
+    },
+    {
+      "step": 3,
+      "what": "due：trial 到期（逾期 3 天）+ adopted 静默 42 天",
+      "command": "node tools/lab-triage.mjs --lifecycle out/lifecycle-b.tmp.json due --now 2026-12-01",
+      "exitCode": 0,
+      "expect": {
+        "trials": [{ "pkg": "lab-fixture-alpha", "trialUntil": "2026-11-28", "overdueDays": 3 }],
+        "adopted": [{ "pkg": "lab-fixture-gamma", "lastActivity": "2026-10-20", "silentDays": 42 }],
+        "summaryLine": "due: 1 trial(s) / 1 adopted(s)"
+      }
+    },
+    {
+      "step": 4,
+      "what": "trial → adopted：verifiedVersion 取 profile 实测 0.2.0（fake-profile），watch 自动 true",
+      "command": "node tools/lab-triage.mjs --lifecycle out/lifecycle-b.tmp.json promote lab-fixture-alpha --to adopted --reason \"试用两周稳定，采用\" --profile fixtures/fake-profile --now 2026-12-01",
+      "exitCode": 0,
+      "expect": {
+        "item": {
+          "pkg": "lab-fixture-alpha",
+          "state": "adopted",
+          "since": "2026-12-01",
+          "trialUntil": null,
+          "watch": true,
+          "verifiedVersion": "0.2.0",
+          "evidenceCount": 2
+        }
+      }
+    },
+    {
+      "step": 5,
+      "what": "candidate → rejected：带 evidence，并生成归档建议 out/rejected-2026-12-01.md",
+      "command": "node tools/lab-triage.mjs --lifecycle out/lifecycle-b.tmp.json promote lab-fixture-beta --to rejected --reason \"权限过高（读写凭据）\" --evidence \"installed.md:20\" --now 2026-12-01",
+      "exitCode": 0,
+      "expect": {
+        "item": {
+          "pkg": "lab-fixture-beta",
+          "state": "rejected",
+          "since": "2026-12-01",
+          "trialUntil": null,
+          "watch": false,
+          "verifiedVersion": null,
+          "evidenceCount": 3,
+          "evidenceRefsContain": ["installed.md:20", "lab-triage: candidate→rejected"]
+        },
+        "archive": "out/rejected-2026-12-01.md",
+        "archiveContains": ["lab-fixture-beta", "权限过高（读写凭据）", "installed.md:20"]
+      }
+    },
+    {
+      "step": 6,
+      "what": "adopted → dormant：watch 保持 true（休眠仍要盯更新）",
+      "command": "node tools/lab-triage.mjs --lifecycle out/lifecycle-b.tmp.json promote lab-fixture-gamma --to dormant --reason \"暂不用，保留观察\" --now 2026-12-01",
+      "exitCode": 0,
+      "expect": {
+        "item": {
+          "pkg": "lab-fixture-gamma",
+          "state": "dormant",
+          "since": "2026-12-01",
+          "trialUntil": null,
+          "watch": true,
+          "verifiedVersion": "2.0.0",
+          "evidenceCount": 2
+        }
+      }
+    },
+    {
+      "step": 7,
+      "what": "check：全生命周期跑完仍无违反",
+      "command": "node tools/lab-triage.mjs --lifecycle out/lifecycle-b.tmp.json check --now 2026-12-01",
+      "exitCode": 0,
+      "expect": {
+        "byState": { "candidate": 0, "trial": 0, "adopted": 1, "rejected": 1, "dormant": 1 },
+        "lastLine": "check: OK"
+      }
+    },
+    {
+      "step": 8,
+      "what": "sync：lifecycle 有、lab-b 没登记 → alpha + gamma 两条建议；反向 delta 一条 info",
+      "command": "node tools/lab-triage.mjs --lifecycle out/lifecycle-b.tmp.json sync --lab fixtures/fake-lab-b --now 2026-12-01",
+      "exitCode": 0,
+      "expect": {
+        "suggestions": ["lab-fixture-alpha", "lab-fixture-gamma"],
+        "excluded": ["lab-fixture-beta"],
+        "labOnly": ["lab-fixture-delta"],
+        "artifact": "out/sync-suggestions.md",
+        "idempotent": true,
+        "artifactContains": ["建议补登记", "待补｜待补｜待补｜待补"]
+      }
+    }
+  ],
+  "negativeCasesNote": "每个负例都在独立副本 out/lifecycle-b.neg.json 上跑（从种子或最终态复制一次再跑），跑完删掉；不许拿 out/lifecycle-b.tmp.json 做负例，否则步骤 7/8 的断言就不可复现了。",
+  "negativeCases": [
+    {
+      "what": "非法迁移：adopted → adopted 直接拒绝（exit 1，文件不变）",
+      "prepare": "Copy-Item fixtures/lifecycle-b.json out/lifecycle-b.neg.json -Force（种子里 gamma 就是 adopted）",
+      "command": "node tools/lab-triage.mjs --lifecycle out/lifecycle-b.neg.json promote lab-fixture-gamma --to adopted --reason \"再采用一次\" --now 2026-12-01",
+      "exitCode": 1,
+      "expect": { "stderrContains": "非法迁移 adopted → adopted", "fileUnchanged": true }
+    },
+    {
+      "what": "rejected 是终结态：rejected → trial 拒绝",
+      "prepare": "Copy-Item out/lifecycle-b.tmp.json out/lifecycle-b.neg.json -Force",
+      "command": "node tools/lab-triage.mjs --lifecycle out/lifecycle-b.neg.json promote lab-fixture-beta --to trial --reason \"想再来一次\" --now 2026-12-02",
+      "exitCode": 1,
+      "expect": { "stderrContains": "非法迁移 rejected → trial", "fileUnchanged": true }
+    },
+    {
+      "what": "adopted 读不到 profile 实测版本 → 拒绝，不填默认值（先用一步 dormant→trial 预热到合法前置状态）",
+      "prepare": "Copy-Item out/lifecycle-b.tmp.json out/lifecycle-b.neg.json -Force",
+      "command": "node tools/lab-triage.mjs --lifecycle out/lifecycle-b.neg.json promote lab-fixture-gamma --to trial --reason \"重试\" --now 2026-12-01  然后  node tools/lab-triage.mjs --lifecycle out/lifecycle-b.neg.json promote lab-fixture-gamma --to adopted --reason \"再采用\" --profile fixtures/fake-lab-b --now 2026-12-01",
+      "exitCode": 1,
+      "expect": { "stderrContains": "adopted 需要 profile 实测版本", "note": "第一条命令（预热到 trial）应 exit 0；只有第二条 exit 1，且 verifiedVersion 仍为 2.0.0 不被写空" }
+    },
+    {
+      "what": "add 只建 candidate：--state 给别的状态直接拒绝",
+      "prepare": "Copy-Item fixtures/lifecycle-b.json out/lifecycle-b.neg.json -Force",
+      "command": "node tools/lab-triage.mjs --lifecycle out/lifecycle-b.neg.json add --pkg lab-fixture-new --kind plugin --label embedded --reason \"跳过试用期\" --state adopted --now 2026-12-01",
+      "exitCode": 1,
+      "expect": { "stderrContains": "add 只建 candidate" }
+    },
+    {
+      "what": "重复 add：pkg 全局唯一",
+      "prepare": "Copy-Item fixtures/lifecycle-b.json out/lifecycle-b.neg.json -Force",
+      "command": "node tools/lab-triage.mjs --lifecycle out/lifecycle-b.neg.json add --pkg lab-fixture-alpha --kind plugin --label embedded --reason \"重复登记\" --now 2026-12-01",
+      "exitCode": 1,
+      "expect": { "stderrContains": "pkg 已存在" }
+    },
+    {
+      "what": "kind 与 pkg 前缀不一致：skill 必须带 skill: 前缀",
+      "prepare": "Copy-Item fixtures/lifecycle-b.json out/lifecycle-b.neg.json -Force",
+      "command": "node tools/lab-triage.mjs --lifecycle out/lifecycle-b.neg.json add --pkg lab-fixture-new --kind skill --label toolchain --reason \"前缀不一致\" --now 2026-12-01",
+      "exitCode": 1,
+      "expect": { "stderrContains": "必须以「skill:」开头" }
+    },
+    {
+      "what": "不变量破坏：手工把 trial 的 trialUntil 改成 null → check exit 1",
+      "prepare": "Copy-Item fixtures/lifecycle-b.json out/lifecycle-b.neg.json -Force；手工把 gamma 的 state 改为 trial、trialUntil 保持 null",
+      "command": "node tools/lab-triage.mjs --lifecycle out/lifecycle-b.neg.json check",
+      "exitCode": 1,
+      "expect": { "stdoutContains": ["INV_TRIAL_NO_TRIAL_UNTIL", "check: 1 violation(s)"] }
+    },
+    {
+      "what": "写目标守卫：--lifecycle 指向真实 lab 目录 → 拒绝写入（lab 只读）",
+      "prepare": "无需副本（守卫在写入前生效，读侧 ENOENT 会被 add 当作空账本）",
+      "command": "node tools/lab-triage.mjs --lifecycle \"<LAB_DIR>/lifecycle.json\" add --pkg lab-fixture-guard --kind plugin --label embedded --reason \"守卫测试\" --now 2026-12-01",
+      "exitCode": 1,
+      "expect": { "stderrContains": "路径在 lab 目录内" }
+    },
+    {
+      "what": "子命令参数白名单：list 不接受 --reason",
+      "prepare": "无需副本",
+      "command": "node tools/lab-triage.mjs --lifecycle fixtures/lifecycle-b.json list --reason \"无关参数\"",
+      "exitCode": 1,
+      "expect": { "stderrContains": "子命令 list 不支持参数 --reason" }
+    }
+  ],
+  "expectedFinalItems": [
+    {
+      "pkg": "lab-fixture-alpha",
+      "kind": "plugin",
+      "label": "embedded",
+      "state": "adopted",
+      "since": "2026-12-01",
+      "trialUntil": null,
+      "watch": true,
+      "lastVerified": null,
+      "verifiedVersion": "0.2.0",
+      "reason": "试用两周稳定，采用"
+    },
+    {
+      "pkg": "lab-fixture-beta",
+      "kind": "plugin",
+      "label": "toolchain",
+      "state": "rejected",
+      "since": "2026-12-01",
+      "trialUntil": null,
+      "watch": false,
+      "lastVerified": null,
+      "verifiedVersion": null,
+      "reason": "权限过高（读写凭据）"
+    },
+    {
+      "pkg": "lab-fixture-gamma",
+      "kind": "plugin",
+      "label": "toolchain",
+      "state": "dormant",
+      "since": "2026-12-01",
+      "trialUntil": null,
+      "watch": true,
+      "lastVerified": "2026-10-20T09:00:00Z",
+      "verifiedVersion": "2.0.0",
+      "reason": "暂不用，保留观察"
+    }
+  ],
+  "assertions": [
+    "种子 fixture 本身必须通过 check（exit 0）：adopted 的 gamma 带 watch:true + verifiedVersion 2.0.0",
+    "步骤 2 后 trialUntil 必须是 2026-11-28（--now 2026-11-14 + 默认 14 天），不得是 2026-11-27（证明按 UTC 日界加天，不受本地时区影响）",
+    "步骤 3 due 的逾期天数必须恰好 3（2026-11-28 → 2026-12-01），静默天数必须恰好 42（2026-10-20 → 2026-12-01）",
+    "步骤 4 的 verifiedVersion 必须来自 profile 实测（0.2.0），不得取 dependencies 的声明区间 ^0.1.0，也不得写 0.1.0",
+    "步骤 5 的 evidence 条数必须为 3（种子 1 + 迁移 1 + --evidence 1）；rejected 不变式因此恒成立",
+    "步骤 5 必须生成 out/rejected-2026-12-01.md，且其中含 pkg / reason / evidence 三样",
+    "步骤 6 的 dormant 必须保留 watch:true（休眠不等于不盯更新），trialUntil 必须清成 null",
+    "步骤 7 check 必须 exit 0，且最后一行是 check: OK",
+    "步骤 8 sync 必须恰好建议 alpha + gamma（beta 是 rejected，不进已装表），反向 info 恰好 delta 一条，且写出 out/sync-suggestions.md",
+    "sync 的产物里权限四项必须是 待补｜待补｜待补｜待补（lab R-3：读不到写「待补」）",
+    "重复跑 sync（同样的 --now）产物必须逐字相同（幂等），不得追加历史",
+    "所有负例必须 exit 1，且**不修改**其所用的副本文件（items 与 updatedAt 不变）；负例一律用独立副本 out/lifecycle-b.neg.json，不污染步骤 7/8 的断言基线",
+    "验收结束后必须复原：重新 copy 种子覆盖副本，或删除副本；不得把改脏的 fixture 留在 fixtures/ 里"
+  ]
+}

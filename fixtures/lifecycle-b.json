@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "updatedAt": "2026-11-12T09:00:00Z",
+  "items": [
+    {
+      "pkg": "lab-fixture-alpha",
+      "kind": "plugin",
+      "label": "embedded",
+      "state": "candidate",
+      "since": "2026-11-10",
+      "trialUntil": null,
+      "watch": false,
+      "lastVerified": null,
+      "verifiedVersion": null,
+      "reason": "嵌入式入门候选：体积小、无外设依赖，先记候选再评估",
+      "evidence": []
+    },
+    {
+      "pkg": "lab-fixture-beta",
+      "kind": "plugin",
+      "label": "toolchain",
+      "state": "candidate",
+      "since": "2026-11-11",
+      "trialUntil": null,
+      "watch": false,
+      "lastVerified": null,
+      "verifiedVersion": null,
+      "reason": "待评估：疑似读写凭据，权限四项未结论前不进 trial",
+      "evidence": [
+        {
+          "type": "note",
+          "ref": "fixtures/fake-lab/installed.md:13 权限栏四项齐全但未核对是否读写凭据",
+          "at": "2026-11-11T08:00:00Z"
+        }
+      ]
+    },
+    {
+      "pkg": "lab-fixture-gamma",
+      "kind": "plugin",
+      "label": "toolchain",
+      "state": "adopted",
+      "since": "2026-09-01",
+      "trialUntil": null,
+      "watch": true,
+      "lastVerified": "2026-10-20T09:00:00Z",
+      "verifiedVersion": "2.0.0",
+      "reason": "已采用：版本与 lab 一致，权限网络项仍待补",
+      "evidence": [
+        {
+          "type": "usage",
+          "ref": "2026-10 全月构建均用到，无报错（4 次构建记录）",
+          "at": "2026-10-20T09:00:00Z"
+        }
+      ]
+    }
+  ]
+}

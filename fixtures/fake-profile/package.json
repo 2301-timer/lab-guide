@@ -1,0 +1,26 @@
+{
+  "name": "lab-guide-fake-profile",
+  "private": true,
+  "description": "lab-guide A 阶段夹具：伪造的 DSH profile 目录，仅用于 lab-drift.mjs 断言。不是可启动的 profile，不含 cordis.patch.yml / .dsh-market，不会被任何宿主加载。",
+  "fixture": {
+    "purpose": "制造 UNREGISTERED(epsilon) / VERSION_DRIFT(alpha) 两类差异所需的 profile 侧事实",
+    "note": "alpha/beta/gamma/epsilon 四个包都在 dependencies 且都有 node_modules 实体；official bundle 只在 bundles；orphan 只在 node_modules 且未被任何包引用（真孤儿）；transitive 只在 node_modules 但被 alpha 的 dependencies 引用（A.1 起不算孤儿）。"
+  },
+  "dependencies": {
+    "lab-fixture-alpha": "^0.1.0",
+    "lab-fixture-beta": "1.4.2",
+    "lab-fixture-gamma": "2.0.0",
+    "lab-fixture-epsilon": "0.3.1"
+  },
+  "dsh": {
+    "profile": {
+      "bundles": [
+        "@deepseek-ai/lab-fixture-official-bundle",
+        "lab-fixture-alpha",
+        "lab-fixture-beta",
+        "lab-fixture-gamma",
+        "lab-fixture-epsilon"
+      ]
+    }
+  }
+}

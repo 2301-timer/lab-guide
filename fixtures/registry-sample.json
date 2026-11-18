@@ -1,0 +1,110 @@
+{
+  "schemaVersion": 1,
+  "fixture": true,
+  "note": [
+    "C.3 手造的「第三方市场 registry」快照（7 条可用 + 1 条 malformed），全部是虚构条目，不对应任何真实插件。",
+    "作用：让「registry 这一源」在完全离线的情况下可验收（--check / --search / --unknown / --goal 都能指到它）。",
+    "验收命令：",
+    "  node lab-guide/tools/_registry.mjs --check --snapshot lab-guide/fixtures/registry-sample.json",
+    "  node lab-guide/tools/lab-analyze.mjs --registry lab-guide/fixtures/registry-sample.json --search 直播",
+    "  node lab-guide/tools/lab-analyze.mjs --registry lab-guide/fixtures/registry-sample.json --goal \"我想学嵌入式，从连板子到画 PCB\" --profile lab-guide/fixtures/catalog-profile",
+    "刻意保留的两处「真实现场」：",
+    "  ① lab-fixture-null-desc 只有名字没有描述 → 它**不算**「registry 有描述」，--unknown 仍会把它判成 P1（若不装）；",
+    "  ② lab-fixture-embed-blink 带了 3 个 unknownFields（publisher/stars/installCmd）→ 演示「不认识的字段原样保留在 extra」。",
+    "source.bytes = null 是刻意的：手写文件没有真实抓取字节数，不编一个数字。"
+  ],
+  "source": {
+    "kind": "file",
+    "url": null,
+    "path": "lab-guide/fixtures/registry-sample.json",
+    "fetchedAt": "2026-11-16T00:00:00.000Z",
+    "httpStatus": null,
+    "bytes": null,
+    "shape": "plugins-array"
+  },
+  "count": 7,
+  "plugins": [
+    {
+      "npm": "lab-fixture-embed-blink",
+      "name": "嵌入式点灯向导",
+      "url": "https://example.com/lab-fixture/embed-blink",
+      "description": "从零连接开发板、点灯、串口调试的分步向导",
+      "keywords": ["嵌入式", "开发板", "点灯"],
+      "category": "embedded",
+      "unknownFields": ["installCmd", "publisher", "stars"],
+      "extra": {
+        "publisher": "lab-fixture",
+        "stars": 12,
+        "installCmd": "dshmarket add lab-fixture-embed-blink"
+      }
+    },
+    {
+      "npm": "lab-fixture-pcb-draw",
+      "name": "PCB 画板助手",
+      "url": "https://example.com/lab-fixture/pcb-draw",
+      "description": "原理图与 PCB 布局检查清单，画板前逐项过一遍",
+      "keywords": ["pcb", "layout", "画板"],
+      "category": "embedded",
+      "unknownFields": [],
+      "extra": {}
+    },
+    {
+      "npm": "lab-fixture-live-guard",
+      "name": "直播弹幕预管理",
+      "url": null,
+      "description": "接入抖音直播弹幕，按关键词预审与折叠",
+      "keywords": ["直播", "弹幕", "预管理", "抖音"],
+      "category": "moderation",
+      "unknownFields": [],
+      "extra": {}
+    },
+    {
+      "npm": "lab-fixture-note-sync",
+      "name": "笔记同步桥",
+      "url": "https://example.com/lab-fixture/note-sync",
+      "description": "把本地 markdown 笔记同步到对象存储，支持冲突提示",
+      "keywords": ["笔记", "同步", "markdown"],
+      "category": "productivity",
+      "unknownFields": [],
+      "extra": {}
+    },
+    {
+      "npm": "@lab-fixture/skill-router",
+      "name": "技能路由器",
+      "url": null,
+      "description": "按任务意图把请求路由到合适的本地 skill",
+      "keywords": ["skill", "路由", "意图"],
+      "category": "base",
+      "unknownFields": [],
+      "extra": {}
+    },
+    {
+      "npm": "lab-fixture-null-desc",
+      "name": "只有名字的插件",
+      "url": null,
+      "description": null,
+      "keywords": [],
+      "category": null,
+      "unknownFields": [],
+      "extra": {}
+    },
+    {
+      "npm": "lab-fixture-ok",
+      "name": "夹具可用包",
+      "url": null,
+      "description": "夹具 profile 里的中文描述样例包，用于 goal 的 installed=true 分支",
+      "keywords": ["夹具"],
+      "category": "tool",
+      "unknownFields": [],
+      "extra": {}
+    }
+  ],
+  "malformed": [
+    {
+      "index": 7,
+      "reason": "第 7 条不是 JSON 对象（是 string）",
+      "raw": "not-an-object"
+    }
+  ],
+  "unknownFields": ["installCmd", "publisher", "stars"]
+}

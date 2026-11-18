@@ -1,0 +1,99 @@
+{
+  "fixture": "lab-guide A 阶段对账器断言基线（A.1 修订：ORPHAN_IN_NM = 真孤儿）",
+  "orphanSemantics": "unreferenced",
+  "note": [
+    "本文件是 lab-drift.mjs 的**期望输出**，不是运行时输入；对账器不会读它。",
+    "用例命令（在仓库根下执行）见 command 字段；--json 便于机器断言。",
+    "generatedAt / 绝对路径 / evidence 文案不进断言（随机器与时钟变化），只断言 kind + pkg + 计数 + verdict。",
+    "语义纠正（原始任务卡的 A/B/C/D 写法自相矛盾，这里定死）：",
+    "  UNREGISTERED = 已装（在 dependencies）但 lab 没登记；MISSING = lab 登了但实际没装。",
+    "  所以「D 在 lab 但没装」只能算 MISSING 一条；要让 UNREGISTERED 也命中，profile 侧必须多一个「装了但没登记」的包，",
+    "  夹具用 lab-fixture-epsilon 承担（等价真实环境的 dsh-purge-community）。详见 ../docs/RULES.md §3。",
+    "A.1 修订（orphanSemantics: unreferenced）：ORPHAN_IN_NM 只报「在 node_modules 顶层 + dependencies/bundles 均未声明 + 未被任何已安装包引用」。",
+    "  所以 lab-fixture-orphan（无人引用）仍报 1 条；lab-fixture-transitive（被 alpha 的 dependencies 引用）不再报，见 expectedNotAnything。"
+  ],
+  "command": "node tools/lab-drift.mjs --profile fixtures/fake-profile --lab fixtures/fake-lab --json",
+  "commandMd": "node tools/lab-drift.mjs --profile fixtures/fake-profile --lab fixtures/fake-lab",
+  "commandExplain": "node tools/lab-drift.mjs --profile fixtures/fake-profile --lab fixtures/fake-lab --explain lab-fixture-transitive",
+  "exitCode": 0,
+  "exitCodeWithFailOnDrift": 2,
+  "expectedSummary": {
+    "total": 4,
+    "UNREGISTERED": 1,
+    "MISSING": 1,
+    "VERSION_DRIFT": 1,
+    "PERMISSION_TODO": 1,
+    "ROSTER_ONLY": 1,
+    "ORPHAN_IN_NM": 1,
+    "verdict": "4 drift(s)"
+  },
+  "expectedDifferences": [
+    {
+      "kind": "UNREGISTERED",
+      "pkg": "lab-fixture-epsilon",
+      "why": "在 dependencies 与 node_modules，installed.md 里没有它"
+    },
+    {
+      "kind": "MISSING",
+      "pkg": "lab-fixture-delta",
+      "why": "installed.md 登记 3.0.0，但 dependencies 与 node_modules 都没有它"
+    },
+    {
+      "kind": "VERSION_DRIFT",
+      "pkg": "lab-fixture-alpha",
+      "why": "lab 0.1.0 vs node_modules 实测 0.2.0（dependencies 写的是 ^0.1.0，不按区间推断）"
+    },
+    {
+      "kind": "PERMISSION_TODO",
+      "pkg": "lab-fixture-gamma",
+      "why": "权限栏网络项写「待补」"
+    }
+  ],
+  "expectedInfo": [
+    {
+      "kind": "ROSTER_ONLY",
+      "pkg": "@deepseek-ai/lab-fixture-official-bundle",
+      "why": "只在 dsh.profile.bundles 里，dependencies 没有，node_modules 也没有"
+    },
+    {
+      "kind": "ORPHAN_IN_NM",
+      "pkg": "lab-fixture-orphan",
+      "why": "在 node_modules 顶层（9.9.9），dependencies 与 bundles 均未声明，且未被任何已安装包引用 → 真孤儿"
+    }
+  ],
+  "expectedNotAnything": [
+    {
+      "pkg": "lab-fixture-transitive",
+      "why": "在 node_modules 顶层且未在 dependencies/bundles 声明，但被 lab-fixture-alpha 的 dependencies 引用 → 传递依赖，不是孤儿；它也不在 lab 基线内，所以任何一类都不该出现"
+    }
+  ],
+  "expectedExplain": {
+    "pkg": "lab-fixture-transitive",
+    "orphan": false,
+    "inNodeModules": true,
+    "inDependencies": false,
+    "inBundles": false,
+    "referencedByCount": 1,
+    "referencedByFirst": "lab-fixture-alpha@0.2.0"
+  },
+  "orphanOutputLimit": {
+    "mdDefaultMaxRows": 20,
+    "jsonAndShowAllOrphansAreFull": true,
+    "fixtureAffectsAssertions": false
+  },
+  "expectedWarningsContain": [
+    "读不到 INDEX.md"
+  ],
+  "expectedVerdictLine": "verdict: 4 drift(s)",
+  "assertions": [
+    "differences 中 kind ∈ {UNREGISTERED, MISSING, VERSION_DRIFT, PERMISSION_TODO} 的条目必须恰好 4 条，且 kind+pkg 与 expectedDifferences 全等（顺序：UNREGISTERED → MISSING → VERSION_DRIFT → PERMISSION_TODO）",
+    "differences 中 kind ∈ {ROSTER_ONLY, ORPHAN_IN_NM} 的条目必须恰好 2 条，kind+pkg 与 expectedInfo 全等",
+    "lab-fixture-beta 不得出现在 differences 任何一类（负样本）",
+    "lab-fixture-transitive 不得出现在 differences 任何一类（传递依赖负样本：被引用即不报孤儿）",
+    "summary.ROSTER_ONLY === 1、summary.ORPHAN_IN_NM === 1，且它们不计入 summary.total",
+    "md 输出最后一行必须是 expectedVerdictLine",
+    "默认退出码 0；追加 --fail-on-drift 时退出码 2",
+    "summary.warnings 至少命中 expectedWarningsContain 里的一条（fake-lab 无 INDEX.md）",
+    "--explain lab-fixture-transitive（--json）→ explain.orphan === false、referencedByCount === 1、referencedBy[0] 以 lab-fixture-alpha@ 开头；退出码 0"
+  ]
+}

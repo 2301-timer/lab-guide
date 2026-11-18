@@ -1,0 +1,11 @@
+{
+  "name": "lab-fixture-catalog-profile",
+  "private": true,
+  "description": "C.2 夹具 profile：专供 `lab-analyze --unknown` 断言「描述不可信」的三档判定（P1/P3）。",
+  "dependencies": {
+    "lab-fixture-vague": "1.0.0",
+    "lab-fixture-marketing": "1.0.0",
+    "lab-fixture-short": "1.0.0",
+    "lab-fixture-ok": "1.0.0"
+  }
+}

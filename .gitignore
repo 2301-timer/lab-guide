@@ -1,0 +1,8 @@
+﻿# 本地数据快照：由各工具按需生成，不进版本库
+data/registry.json
+data/catalog.json
+data/host-rows.json
+data/lifecycle.json
+# 只忽略仓库根的 out/ 与 node_modules/；fixtures 里的 node_modules 是测试数据，必须入库
+/out/
+/node_modules/

@@ -1,0 +1,8 @@
+# 夹具：权限面「命令 + 凭据」
+#
+# 本包 insert 的 id 与官方行、其他已装包都不重名，所以 row 争用应为 ok。
+# 它的价值在 §2 权限四项：代码里同时有 child_process（起子进程）与凭据读取，
+# 结论必须落在最高一档「全量（含命令或凭据）」。
+- insert:
+    - id: lab-fixture-shellcred
+      name: 'lab-fixture-shellcred'

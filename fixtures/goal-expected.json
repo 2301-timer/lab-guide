@@ -1,0 +1,683 @@
+{
+  "fixture": "lab-guide C.3（registry 三源合并 + --goal 目标入口）断言基线",
+  "note": [
+    "本文件是**期望输出**，不是运行时输入；lab-analyze / _registry 都不会读它。",
+    "用例命令均在仓库根下执行（PowerShell / bash 都行；含引号的中文目标请整体加引号）。",
+    "不断言 generatedAt / 绝对路径 / 告警自然语言部分；只断言结构字段、条数与结论。",
+    "口径出处：三源优先级与 registry 口径见 ../docs/RULES.md §12.1–§12.2；goal 分词与打分见 §12.3。",
+    "本会话 pwsh 不可用（SetNamedSecurityInfoW failed (Win32 5)）→ 下列期望全部由「源码 + 夹具 + 真实 catalog.json 逐行推演」得到，**未经实跑**（见 ../README.md §6）。",
+    "C.3.1（2026-11-16）：用户实测暴露两问题 → ①_registry 响应上限 8 MiB→64 MiB + 流式 + --max-bytes；②--goal 加相关性门禁/通用词降权/噪声词丢弃。本文件与旧期望冲突处**已按新口径改写**，逐条对照见 ../docs/RULES.md §12.3.6 末尾那张表。",
+    "C.3.1 的分数变化原因：通用词「管理」原始权重 3/5 → ⌊×0.5⌋ = 1/2；噪声词（接抖/接抖音/学嵌/连板/板子/连板子…）不再参与打分。",
+    "推演依据：catalog.json 里含「嵌入」的只有 @deepseek-ai/dsh-library 一条描述（「本地嵌入零模型下载」），不含「嵌入式」；含「管理」的 5 条见 §12.2 的说明；catalog 不含「直播 / 抖音 / pcb / 板子 / 连板」。",
+    "registry 夹具（../fixtures/registry-sample.json）是手造的 7 条可用 + 1 条 malformed，source.kind=file、url=null（离线导入，不是抓取结果）。",
+    "C.3.2（2026-11-16）：用户 dump 出真实响应 out/registry-raw.json（13,837,168 字节 / 10,974 条 / 数组键 plugins / description 为 {en,zh} 对象）→ 快照 schema 升到 v2，旧夹具 schemaVersion=1 **降级为负例**。所有以该夹具为输入的用例（check-fixture-snapshot / from-file-stats / from-file-write-then-check / max-bytes-inline-accepted / fixture-goal-* / fixture-search-live / fixture-unknown-*）保留为「C.3.1 历史口径」，逐条带 c32 标记；**现行验收基准见下方 c32 段**（RULES §12.1.4–§12.1.7、README §5.7.2）。",
+    "C.3.3（2026-11-16，本项目最后一轮代码改动）：用户实测「--search 能捞到内容、--goal 结果过小」，根因是**词表对不齐**（不是门槛不严）。三件事：①--goal 命中改**分层**（强 ≥0.5 / 弱 0.2–0.5 / 仅字面 <0.2），取消 C.3.1 的「长词 / ≥2 词 / Σ≥6」硬门槛、**保留通用词否决**；②新增 **`## 词表诊断`**（逐词命中条目数 + 未命中标记 + 4 组硬编码同义词提示，不建表不参与打分）；③命中词权重乘 **idf**（clamp(ln(池总数/(1+命中条目数)), 0.5, 3.0)，两位小数）。现行基准见下方 **c33** 段；c32 保留并标 superseded（其中 goal 相关的分数口径已被 c33 改写，registry 相关断言仍然有效）。"
+  ],
+  "c32": {
+    "supersededBy": "c33（C.3.3）：--goal 的门槛与权重口径已改（分层取代硬门槛、命中词再乘 idf）。本段里 registry 相关断言（resolve/check/写快照/--search 三源）仍然有效；`c32-goal-embedded-real` / `c32-goal-live-no-generic-noise` 两条 goal 断言的**分数与候选条数**以 c33 为准，本段保留只为对照。",
+    "note": "C.3.2：按真实市场响应重写的验收基准（本会话未实跑——pwsh 不可用；期望值来自「实读 raw 文件顶层形状 + 源码自核」）。",
+    "realData": {
+      "rawFile": "out/registry-raw.json",
+      "bytes": 13837168,
+      "topKeys": ["registry", "hostVersion"],
+      "containerKey": "registry",
+      "arrayKey": "plugins",
+      "count": 10974,
+      "registrySelfReportedCount": 10974,
+      "categoryCount": 23,
+      "descriptionShape": "object {en, zh}"
+    },
+    "positive": [
+      {
+        "id": "c32-from-file-real-write",
+        "command": "node tools/_registry.mjs --from-file out/registry-raw.json --write",
+        "exitCode": 0,
+        "expect": {
+          "schemaVersion": 2,
+          "count": 10974,
+          "countMatchesDeclared": true,
+          "shape": "registry>plugins",
+          "arrayKey": "plugins",
+          "containerKey": "registry",
+          "source.kind": "file",
+          "source.bytes": 13837168,
+          "source.httpStatus": null,
+          "largeResponse": true,
+          "wrote": true
+        },
+        "mdExpect": { "contains": ["数组键 plugins", "hostVersion", "大响应: ", "已写快照"] },
+        "why": "真实形状是两层（registry 容器 + plugins 数组），旧代码只认顶层数组 → 这条是「形状适配」的核心回归。10974 条必须全量进 entries（不截断）。"
+      },
+      {
+        "id": "c32-check-ok",
+        "command": "node tools/_registry.mjs --check",
+        "exitCode": 0,
+        "mdExpect": { "lastLinePrefix": "check: OK —— 快照结构完整（10974 条" },
+        "why": "v2 校验：count === entries.length + 抽样前 20 条有 name + source 五键齐全（url/fetchedAt/httpStatus/bytes/hostVersion）。"
+      },
+      {
+        "id": "c32-search-real",
+        "command": "node tools/lab-analyze.mjs --search 直播",
+        "exitCode": 0,
+        "expect": {
+          "registry.count": 10974,
+          "results.every.hasStarsAndDownloads": true,
+          "results.every.hasRedLinesFlag": true,
+          "elapsedMs": "< 2000（目标；本会话未实测，不编数字）"
+        },
+        "why": "真实 10974 条里「直播」大概率有命中；每条必须带 stars/downloads/redLines 与得分；报告头必须有 elapsedMs 与 shape/arrayKey/hostVersion。"
+      },
+      {
+        "id": "c32-goal-embedded-real",
+        "command": "node tools/lab-analyze.mjs --goal \"我想学嵌入式，从连板子到画 PCB\"",
+        "exitCode": 0,
+        "expect": {
+          "candidates.length": "<= 10（top10）",
+          "candidates.every.hasMatchedWeights": true,
+          "candidates.every.uninstalledPermission": "unknown（未安装，本地无代码）",
+          "elapsedMs": "< 2000（目标）"
+        },
+        "why": "top10 必须带命中词与权重（含命中字段）；未装包权限固定 unknown。权重表：名称3/中文描述3/英文描述2/能力3/keywords2/分类1。"
+      }
+    ],
+    "negative": [
+      {
+        "id": "c32-v1-fixture-check-fails",
+        "command": "node tools/_registry.mjs --check --snapshot fixtures/registry-sample.json",
+        "exitCode": 1,
+        "mdExpect": { "contains": ["schemaVersion", "应为 2"] },
+        "why": "旧夹具是 schemaVersion 1 + 字符串 description → v2 必须拒绝（否则它会静默丢字段）。这就是「夹具保留作负例」的落点。"
+      },
+      {
+        "id": "c32-v1-fixture-from-file-fails",
+        "command": "node tools/_registry.mjs --from-file fixtures/registry-sample.json --json",
+        "exitCode": 1,
+        "mdExpect": { "stderrContains": "schemaVersion" },
+        "why": "同一负例的导入路径：必须报版本不符，不能把 v1 当成合法输入。"
+      },
+      {
+        "id": "c32-fixture-registry-unavailable",
+        "command": "node tools/lab-analyze.mjs --registry fixtures/registry-sample.json --search 直播 --profile fixtures/catalog-profile",
+        "exitCode": 0,
+        "expect": { "registry.available": false, "registry.reason": "含 schemaVersion=1" },
+        "why": "registry 不可用 → 降级（catalog+已装）并告警，不拿旧数据冒充市场；因此 C.3.1 的「命中 1 条 lab-fixture-live-guard」期望已失效。"
+      },
+      {
+        "id": "c32-goal-live-no-generic-noise",
+        "command": "node tools/lab-analyze.mjs --goal \"接抖音直播做预管理\"",
+        "exitCode": 0,
+        "expect": { "candidates.matchedTokens": "不含仅有『管理』的条目；管理-only 必须落 belowThreshold" },
+        "why": "池子从 209 涨到约 11100 条，通用词「管理」的偶然命中只会更多 —— 三条门槛与通用词降权必须仍然生效，否则这条会再次出现「全是管理」的噪声。"
+      }
+    ]
+  },
+
+  "c33": {
+    "note": [
+      "C.3.3：`--goal` 的**分层 + 词表诊断 + idf 加权**验收基准（口径出处：RULES §12.3.8、README §5.7.3）。",
+      "本会话 `pwsh` 不可用（`SetNamedSecurityInfoW failed (Win32 5): grantWrite(...)`）→ **全部用例未执行**；下列期望值来自「源码逐行自核 + 公式手工复算」，**没有一个是实跑输出**（见 README §6 的未执行项）。",
+      "不造同义词词典：同义词提示只是 4 组硬编码示例（`SYNONYM_HINTS`），**不参与匹配、不参与打分**，只用于解释「为什么 0 命中」。",
+      "断言方式是「可复算」而不是「记住分数」：给命中词与命中条目数，验收人可用 c33.verify 的公式从报告里的 `diagnostics` / `matched[].fields` 反算出同一个 `weight` 与 `Σ`。"
+    ],
+    "thresholds": {
+      "coverage": "命中有效词数 / 有效词总数（分母 = 噪声过滤后的 tokens.length）",
+      "strong": "覆盖率 ≥ 0.5",
+      "weak": "0.2 ≤ 覆盖率 < 0.5",
+      "literal": "覆盖率 < 0.2，**或** 只命中通用词（C.3.1 否决仍生效）",
+      "literalCap": 10,
+      "tableCap": 20,
+      "removedLegacyGate": "C.3.1 的「①长词 ②≥2 个不同词 ③Σ≥6」三条**不再参与判定**（保留在 rule.legacyGate / judgeRelevance 里仅作历史对照）"
+    },
+    "idf": {
+      "formula": "idf = clamp(ln(池总数 / (1 + 该词命中条目数)), 0.5, 3.0)，保留两位小数",
+      "poolTotalSource": "pool.total（registry + catalog + 已装 三源条数之和；md/json 的 diagnostics.poolTotal）",
+      "hitsSource": "diagnostics.tokens[].hits（**命中条目数**，不是出现次数；一次预计算得出）",
+      "weightFormula": "weight = round2(Σ命中字段权重 × idf)；通用词再 round2(×0.5)；Σ = round2(Σ weight)",
+      "fieldWeights": { "name": 3, "descriptionZh": 3, "descriptionEn": 2, "capabilities": 3, "keywords": 2, "category": 1 },
+      "workedExamples": [
+        { "case": "稀有词：命中 12 条 / 池 10974", "compute": "ln(10974 / 13) = 6.7385 → 夹取到上界", "idf": 3.0 },
+        { "case": "中等稀有：命中 800 条 / 池 10974", "compute": "ln(10974 / 801) = 2.6174", "idf": 2.62 },
+        { "case": "触底边界：命中 6655 条 / 池 10974", "compute": "ln(10974 / 6656) = 0.5001 → 夹取下界 0.5", "idf": 0.5 },
+        { "case": "0 命中（未命中词）", "compute": "ln(10974 / 1) = 9.3033 → 夹取到上界", "idf": 3.0, "note": "idf 记 3.00 只是为了表格完整：没命中就没有权重，不参与 Σ" }
+      ],
+      "caveat": "任务卡给的例子（800 条 → ~0.5）与公式本身不一致：按上面这条公式，800 条算出来是 2.62；0.5 只在命中 ≈6655 条以上才触底。**代码按公式实现**（可复算优先），差异记在 Q-001，待主控决定是否改用归一化写法。"
+    },
+    "positive": [
+      {
+        "id": "c33-goal-embedded-real",
+        "command": "node tools/lab-analyze.mjs --goal \"我想学嵌入式，从连板子到画 PCB\"",
+        "exitCode": 0,
+        "precondition": "data/registry.json = 10,974 条真实快照（已落盘，schemaVersion 2）；profile 可读",
+        "expect": {
+          "md.sections": ["## 强匹配", "## 弱匹配", "## 仅字面命中", "## 词表诊断", "## 候选"],
+          "tiers.thresholds": { "strong": 0.5, "weak": 0.2, "literalCap": 10 },
+          "diagnostics.tokens[*]": "每个有效词都有 {token, hits, idf, missing}；hits 与 idf 满足 c33.idf.formula",
+          "diagnostics.tokens[token=嵌入式].missing": "如果它在池里 0 命中 → 必须 true，并在 md 表格里显示『**未命中**（池中 0 条）』",
+          "diagnostics.missingNote": "存在未命中词时必为『这些词在本地的 <pool.total> 条目录里没有出现；试换同义词再搜（如 嵌入式 → PCB / 单片机 / EDA / 固件）』",
+          "diagnostics.synonymHints.length": 4,
+          "matched[*].idf": "非 null（--goal 走加权路径）；每个命中词的 weight = round2(字段权重和 × idf)（通用词再 ×0.5）",
+          "candidates.length": "<= 10（仍是 top10）",
+          "candidates[*].permission": "未装包固定 unknown（未安装，本地无代码）",
+          "elapsedMs": "< 2000（目标；本会话未实测，**不编数字**）"
+        },
+        "mdExpect": {
+          "contains": [
+            "> **本入口是「池内降噪」，不是语义搜索**",
+            "## 强匹配（覆盖率 ≥ 0.5）",
+            "## 弱匹配（0.2 ≤ 覆盖率 < 0.5）",
+            "## 仅字面命中（覆盖率 < 0.2",
+            "## 词表诊断",
+            "idf ",
+            "同义词提示"
+          ],
+          "lastLinePrefix": "goal: "
+        },
+        "why": "用户实测的核心用例：词表对不齐（`嵌入式` vs 市场里的 `PCB/单片机/EDA/固件`）。分层保证「弱/字面」命中不再被硬门槛丢掉；词表诊断直接点出哪个词在池里 0 命中；idf 让稀有词（推流类/嵌入式类）压过通用词。"
+      },
+      {
+        "id": "c33-goal-live-generic-veto",
+        "command": "node tools/lab-analyze.mjs --goal \"接抖音直播做预管理\"",
+        "exitCode": 0,
+        "expect": {
+          "candidates[*].matchedTokens": "不得只有通用词（管理/设置/任务/服务/系统/配置/面板/工具/助手/插件/功能/支持/自定/接口/数据）",
+          "tiers.weak[*].genericOnly": "全部为 false",
+          "tiers.literal[*].pkg": "「只管命中『管理』」的条目必须出现在这里（`genericOnly: true`，`matchReasons` 含『只命中通用词』），且 `coverage` 通常 < 0.2",
+          "belowThreshold[*].isMatch": false,
+          "md.sections": "『## 仅字面命中』段必须存在（即使强/弱为空）"
+        },
+        "mdExpect": {
+          "contains": ["## 仅字面命中", "只命中通用词"],
+          "lastLinePrefix": "goal: "
+        },
+        "why": "C.3.1 的否决必须仍然生效：门槛取消了，但如果「管理-only」能靠覆盖率混进弱匹配，用户实测的 8 条噪声就会复活。**这一条是分层的安全阀**。"
+      },
+      {
+        "id": "c33-search-unchanged",
+        "command": "node tools/lab-analyze.mjs --search 直播",
+        "exitCode": 0,
+        "expect": {
+          "results[*].matched[*].idf": "**没有这个键**（不是 null）：--search 走的是不加权路径，字段集合与 C.3.2 完全一致",
+          "results[*].matched[*].weight": "整数（未乘 idf）；通用词仍是 ⌊原始权重 × 0.5⌋",
+          "results[*]": "字段与 C.3.2 完全一致（source / installed / stars / downloads / redLines / score / breakdown）",
+          "rule.and": "『关键词按空白分词，全部命中（AND）才算匹配』",
+          "elapsedMs": "< 2000（目标）"
+        },
+        "mdExpect": { "lastLinePrefix": "匹配 " },
+        "why": "硬约束：**不改 --search 行为**。实现层用「不传 idfMap → 旧路径」保证：scoreCandidate 在没有 idfMap 时权重仍是整数、通用词仍 ⌊×0.5⌋，排序（来源 → 得分 → 包名）与末行一字未改。"
+      }
+    ],
+    "negative": [
+      {
+        "id": "c33-search-has-no-idf",
+        "command": "node tools/lab-analyze.mjs --search 直播 --json",
+        "exitCode": 0,
+        "expect": { "results[*].matched[*].idf": "**该键不存在**（--search 不加权）", "diagnostics": "不存在（--search 不产出词表诊断）" },
+        "why": "反向证明「idf 只作用于 --goal」：如果 --search 的 json 里出现 `diagnostics`、或 matched 行里出现 `idf`（哪怕是 null），说明改动漏到了 --search。"
+      },
+      {
+        "id": "c33-goal-no-hit-still-says-no-match",
+        "command": "node tools/lab-analyze.mjs --goal zzzqqq",
+        "exitCode": 0,
+        "expect": {
+          "matchedTotal": 0,
+          "gatedOutTotal": 0,
+          "tiers.counts": { "strong": 0, "weak": 0, "literal": 0 },
+          "closest.length": 0,
+          "diagnostics.tokens[token=zzzqqq].missing": true
+        },
+        "mdExpect": { "contains": ["池中无匹配", "不硬凑候选", "## 词表诊断"], "lastLinePrefix": "goal: 0 候选 / 池 " },
+        "why": "分层不能把「一条都没有」变成「有一堆字面命中」：连词都没命中时仍然是「池中无匹配 + 不硬凑」，但词表诊断照给（这是本轮新加的『说清为什么』）。"
+      },
+      {
+        "id": "c33-tier-counts-are-not-truncated",
+        "command": "node tools/lab-analyze.mjs --goal \"接抖音直播做预管理\" --json",
+        "exitCode": 0,
+        "expect": {
+          "tiers.counts": "= 真实条数（不受 tableCap 影响）",
+          "tiers.notListed.weak": "= max(0, counts.weak − 20)",
+          "tiers.notListed.literal": "= max(0, counts.literal − 10)"
+        },
+        "why": "md/json 只物化前 20（强/弱）与前 10（仅字面）行，但**条数必须是全量算出来的**；`notListed` 给出差额，不许静默截断。"
+      },
+      {
+        "id": "c33-old-gate-is-gone",
+        "command": "node tools/lab-analyze.mjs --goal \"我想学嵌入式，从连板子到画 PCB\" --json",
+        "exitCode": 0,
+        "expect": {
+          "rule.gate": "不存在（C.3.1 的字段已移除）",
+          "rule.legacyGate": "存在，且写明『C.3.3 起取消，不再参与判定』",
+          "rule.tiers": "存在，含 0.5 / 0.2 / 10 三个阈值"
+        },
+        "why": "防止「门槛只是被绕过」：rule 段必须自证旧三条已停用、新分层已生效（而不是两套规则同时在跑）。"
+      }
+    ],
+    "verify": {
+      "note": "验收人拿到报告后，按下面三步复算，不需要信任任何写死的分数。",
+      "steps": [
+        "1) 取 `diagnostics.tokens[]` 的 (token, hits) 与 `diagnostics.poolTotal`；算 idf' = round2(clamp(ln(poolTotal/(1+hits)), 0.5, 3.0))，必须等于报告里的 idf。",
+        "2) 取某条候选的 `matched[]`：每个词有 `fields[]`（命中字段）；weight' = round2(Σ 字段权重 × idf)，通用词再 round2(×0.5) —— 必须等于报告里该词的 weight。",
+        "3) Σ' = round2(Σ weight) 必须等于该条的 `score`；`coverage` = round2(matched.length / tokens.length) 必须等于报告里的 coverage，且落在对应层的阈值区间（或 genericOnly=true → 必为仅字面）。"
+      ]
+    }
+  },
+
+  "registryCases": {
+    "note": "先验 registry 这一层：白名单、三形状、快照、校验。",
+    "positive": [
+      {
+        "id": "check-fixture-snapshot",
+        "c32": "superseded：夹具是 schemaVersion 1 → v2 起 --check 必须 exit 1（负例，见 c32.negative.c32-v1-fixture-check-fails）",
+        "command": "node tools/_registry.mjs --check --snapshot fixtures/registry-sample.json",
+        "exitCode": 0,
+        "mdExpect": { "lastLine": "check: OK —— 快照结构完整（7 条 ｜ malformed 1 ｜ 未知字段 3 个）" },
+        "why": "夹具是规范快照形态：count=7、malformed 1 条、unknownFields 3 个（installCmd/publisher/stars）"
+      },
+      {
+        "id": "from-file-stats",
+        "c32": "superseded：v1 夹具导入现在直接 exit 1；真实数据的统计基准见 c32.positive.c32-from-file-real-write（count 10974 / bytes 13837168 / 数组键 plugins）",
+        "command": "node tools/_registry.mjs --from-file fixtures/registry-sample.json --json",
+        "exitCode": 0,
+        "expect": {
+          "count": 7,
+          "malformedCount": 1,
+          "unknownFields": ["installCmd", "publisher", "stars"],
+          "fieldCoverage.npm": 7,
+          "fieldCoverage.name": 7,
+          "fieldCoverage.description": 6,
+          "fieldCoverage.keywords": 6,
+          "fieldCoverage.category": 6,
+          "wrote": false,
+          "source.kind": "file",
+          "source.httpStatus": null,
+          "source.maxBytes": null
+        },
+        "why": "lab-fixture-null-desc 只有名字（description/category 皆 null、keywords 空）→ 描述/分类覆盖各少 1 条；这才叫「拿不到就说拿不到」。C.3.1 起 source 多一个 maxBytes：文件来源没有「响应上限」这个概念 → null（键在、值诚实为空）"
+      },
+      {
+        "id": "max-bytes-inline-accepted",
+        "c32": "superseded：输入改成 out/registry-raw.json（v1 夹具会被拒）；--max-bytes 的解析规则（128MiB = 134217728）本身未变",
+        "command": "node tools/_registry.mjs --from-file fixtures/registry-sample.json --max-bytes 128MiB --json",
+        "exitCode": 0,
+        "expect": { "count": 7, "wrote": false },
+        "why": "C.3.1：--max-bytes 接受纯字节数或带 k/m/g 后缀（128MiB = 134217728），解析不报错；--from-file 不吃这个上限（文件不走响应上限），所以只是被接受、不改结果"
+      },
+      {
+        "id": "live-capture-large-response",
+        "c32": "updated：真实规模已实读 → count 应为 10974（不是 200–400），shape = registry>plugins，数组键 plugins，bytes = 13837168；其余（64 MiB 上限 / 流式 / 大响应行）不变",
+        "command": "node tools/_registry.mjs --url http://127.0.0.1:64669/dsh-market/registry --write",
+        "exitCode": 0,
+        "precondition": "本机市场在 64669 上有 /dsh-market/registry（用户实测该路由存在，且响应带完整 README → > 8 MiB，旧上限 8388608 会中止）",
+        "expect": {
+          "wrote": true,
+          "source.kind": "http",
+          "source.bytes": 13837168,
+          "source.maxBytes": 67108864,
+          "shape": "registry>plugins",
+          "arrayKey": "plugins",
+          "containerKey": "registry",
+          "count": 10974
+        },
+        "mdExpect": {
+          "contains": ["已写快照", "大响应: "],
+          "lastLinePrefix": "registry: "
+        },
+        "why": "C.3.1 的主修：①64 MiB 上限 + 流式累加 → 不再因 >8 MiB 中止；②>8 MiB 时额外打印「大响应: <bytes> 字节 ｜ 解析出 count <N> 条」；③source.bytes / source.maxBytes 双证。**这条是用户实测场景的回归用例**，本次未执行（pwsh 不可用 + 不能替用户抓快照）"
+      },
+      {
+        "id": "from-file-write-then-check",
+        "c32": "superseded：v1 夹具导入会 exit 1；等价的正例换成 --from-file out/registry-raw.json --write（见 c32.positive.c32-from-file-real-write / c32-check-ok）",
+        "command": "node tools/_registry.mjs --from-file fixtures/registry-sample.json --write && node tools/_registry.mjs --check",
+        "exitCode": 0,
+        "expect": { "wrote": true },
+        "mdExpect": { "firstCommandContains": "已写快照", "secondCommandLastLine": "check: OK" },
+        "why": "离线也能把快照落到 data/registry.json（唯一写动作）；随后 --check 校验通过",
+        "cleanup": "跑完若要恢复原状，删除 data/registry.json（它本来就不由代码生成，必须由用户自己跑）"
+      }
+    ],
+    "negative": [
+      {
+        "id": "max-bytes-not-a-number",
+        "command": "node tools/_registry.mjs --url http://127.0.0.1:64669/dsh-market/registry --max-bytes abc",
+        "exitCode": 1,
+        "stderrContains": "参数 --max-bytes 取值不合法",
+        "why": "C.3.1：参数错必须在发请求之前就报（不静默退回默认值 —— 那会让人以为「已放开」其实没放开）"
+      },
+      {
+        "id": "max-bytes-overflow-still-aborts",
+        "command": "node tools/_registry.mjs --url http://127.0.0.1:64669/dsh-market/registry --max-bytes 1 --write",
+        "exitCode": 1,
+        "precondition": "本机市场在 64669 上有 /dsh-market/registry（否则这条会先报「请求 loopback 失败」，同样是 exit 1，但验的不是超限路径）",
+        "stderrContains": "响应超过 1 字节上限 → 中止",
+        "why": "上限只是数值可调，**语义没变**：超限立即 req.destroy() + 中止，不写半截快照。用 1 字节把「超限路径」变成确定性负例（不依赖市场响应到底多大）"
+      },
+      {
+        "id": "non-loopback-host",
+        "command": "node tools/_registry.mjs --url http://192.168.1.10:8080/dsh-market/registry",
+        "exitCode": 1,
+        "stderrContains": "仅允许 loopback"
+      },
+      {
+        "id": "loopback-but-https",
+        "command": "node tools/_registry.mjs --url https://127.0.0.1:8080/dsh-market/registry",
+        "exitCode": 1,
+        "stderrContains": "仅允许 loopback：协议必须是 http:"
+      },
+      {
+        "id": "loopback-without-port",
+        "command": "node tools/_registry.mjs --url http://127.0.0.1/dsh-market/registry",
+        "exitCode": 1,
+        "stderrContains": "端口必须显式给出"
+      },
+      {
+        "id": "localhost-with-port-is-allowed",
+        "command": "node tools/_registry.mjs --url http://localhost:59999/dsh-market/registry",
+        "exitCode": 1,
+        "stderrContains": "请求 loopback 失败",
+        "why": "localhost 与 [::1] 也在白名单内：这条不是白名单拒绝，而是端口没进程 → 报「请求 loopback 失败」，仍 exit 1（不静默）"
+      },
+      {
+        "id": "no-source",
+        "command": "node tools/_registry.mjs",
+        "exitCode": 1,
+        "stderrContains": "缺少数据源"
+      },
+      {
+        "id": "url-and-from-file",
+        "command": "node tools/_registry.mjs --url http://127.0.0.1:8080/x --from-file fixtures/registry-sample.json",
+        "exitCode": 1,
+        "stderrContains": "不能同时使用"
+      },
+      {
+        "id": "check-with-write",
+        "command": "node tools/_registry.mjs --check --write",
+        "exitCode": 1,
+        "stderrContains": "--check 只校验现有快照"
+      },
+      {
+        "id": "unknown-shape",
+        "command": "node tools/_registry.mjs --from-file data/host-rows.json",
+        "exitCode": 1,
+        "stderrContains": "响应形状不认识",
+        "why": "host-rows.json 是 {hostVersion, rows:{…}}，不是 plugins/entries 数组 → 报错并列顶层键，绝不猜"
+      }
+    ]
+  },
+  "goalCases": {
+    "note": [
+      "goal 打分公式（C.3.2 定版，RULES §12.3.2）：名称×3 / 中文描述×3（⌈2×1.5⌉）/ 英文描述×2 / capabilities×3（⌈2×1.5⌉）/ keywords×2 / category×1，通用词再 ×0.5 向下取整，同分按包名升序。",
+      "C.3.1 门禁（RULES §12.3.6）：①命中≥1 个长词（中文≥3字/英文≥5）②命中≥2 个不同词 ③Σ≥6，缺一即不入候选；只命中通用词一律不算。**C.3.2 未改这三条**。",
+      "⚠️ **C.3.3 起上面这条门禁已取消**（它正是「--goal 结果过小」的直接原因）：现行判定是**分层**（强 ≥0.5 / 弱 0.2–0.5 / 仅字面 <0.2，三层全展示）+ **通用词否决**（只命中通用词一律进「仅字面命中」）+ **idf 加权**。本段 `goalCases` 里的分数是 C.3.1 口径的历史值，**现行基准看顶层 `c33` 段**。",
+      "下面 fixture 用例的分数是 C.3.1 口径的历史值（15 / 7 / 30）——**夹具已降级为 v1 负例**，这些数只在夹具曾可用时成立；C.3.2 的现行基准见顶层 c32 段。",
+      "真实环境用例（无 registry 快照）只断言池子与结论性质，**不写死候选条数**（本机 14 个已装包的 description 内容会随安装变化）。"
+    ],
+    "positive": [
+      {
+        "id": "fixture-goal-embedded",
+        "c32": "superseded：夹具快照不可用（v1 被拒）→ registry 源计 0 条；C.3.1 的 Σ15/Σ7/tokens 5 个只在夹具曾经可用时成立。真实数据基准见 c32.positive.c32-goal-embedded-real",
+        "command": "node tools/lab-analyze.mjs --registry fixtures/registry-sample.json --goal \"我想学嵌入式，从连板子到画 PCB\" --profile fixtures/catalog-profile --json",
+        "exitCode": 0,
+        "expect": {
+          "tokens": ["嵌入", "入式", "嵌入式", "学嵌入式", "pcb"],
+          "tokensDropped[*].token": ["学嵌", "学嵌入", "连板", "板子", "连板子"],
+          "pool.registry": 7,
+          "pool.catalog": 195,
+          "pool.installed": 4,
+          "pool.total": 206,
+          "matchedTotal": 2,
+          "gatedOutTotal": 1,
+          "candidates[0].pkg": "lab-fixture-embed-blink",
+          "candidates[0].source": "registry",
+          "candidates[0].installed": false,
+          "candidates[0].score": 15,
+          "candidates[0].permission": "unknown（未安装，本地无代码）",
+          "candidates[0].nextStep": "装前请人工确认权限，本工具不联网",
+          "candidates[1].pkg": "lab-fixture-pcb-draw",
+          "candidates[1].score": 7,
+          "belowThreshold[0].pkg": "@deepseek-ai/dsh-library",
+          "belowThreshold[0].source": "catalog",
+          "belowThreshold[0].score": 2,
+          "belowThreshold[0].isMatch": false,
+          "closest": []
+        },
+        "mdExpect": {
+          "contains": [
+            "> **本入口是「池内降噪」，不是语义搜索**",
+            "| 包名 | 名称 | 来源 | 命中词 | 已装 | 同轨已有 | 权限 | 下一步 |",
+            "unknown（未安装，本地无代码）",
+            "### 未过门槛（有命中但**不是匹配**）",
+            "丢弃的噪声词"
+          ],
+          "lastLine": "goal: 2 候选 / 池 206（registry 7 ｜ catalog 195 ｜ 已装 4）"
+        },
+        "why": [
+          "embed-blink = 15：嵌入/入式/嵌入式 三个词各命中「名称(+3) + keywords(+2)」→ 3×5（与 C.3 同分，都是非通用词）",
+          "pcb-draw = 7：pcb 命中 名称(+3) + description(+2) + keywords(+2)；pcb 只有 3 字母**不算长词**、不同词只有 1 个 → 靠第三条「Σ7 ≥ 6」过门禁",
+          "dsh-library = 2：只有「嵌入」命中它的 description（本地嵌入零模型下载）。C.3.1 前它是 top3 候选；现在三条门禁全不过（无长词 / 词数 1<2 / Σ2<6）→ 落进 belowThreshold，**不在候选表里**",
+          "tokens 从 10 个降到 5 个：学嵌 / 学嵌入 / 连板 / 板子 / 连板子 在池内 name+description+keywords 出现 0 次且长度 <4 → 规则 D 丢弃（原词仍列在 tokensDropped）",
+          "学嵌入式 长度 4 ≥4 → 即使池内 0 次也保留（它是用户说出来的概念，不是滑窗碎片）；它 0 命中，不影响分数",
+          "matchedTotal=2（过门禁的候选总数），gatedOutTotal=1（有分但没过门槛），closest=[]（有候选时不给「最接近」栏）"
+        ]
+      },
+      {
+        "id": "fixture-goal-live",
+        "c32": "superseded：夹具快照不可用 → 该用例的 1 候选 / Σ30 只在夹具可用时成立；真实数据的反噪声基准见 c32.negative.c32-goal-live-no-generic-noise",
+        "command": "node tools/lab-analyze.mjs --registry fixtures/registry-sample.json --goal \"接抖音直播做预管理\" --profile fixtures/catalog-profile --json",
+        "exitCode": 0,
+        "expect": {
+          "tokens": ["抖音", "音直", "直播", "预管", "管理", "抖音直", "音直播", "预管理", "接抖音直", "抖音直播"],
+          "tokensDropped[*].token": ["接抖", "接抖音"],
+          "matchedTotal": 1,
+          "gatedOutTotal": 5,
+          "candidates[0].pkg": "lab-fixture-live-guard",
+          "candidates[0].score": 30,
+          "candidates[0].installed": false,
+          "candidates[0].matchedTokens": ["抖音", "音直", "直播", "预管", "管理", "抖音直", "音直播", "预管理", "抖音直播"],
+          "belowThreshold[*].pkg": [
+            "@deepseek-ai/dsh-plugin-manager",
+            "@deepseek-ai/dsh-client-ui-settings-account",
+            "@deepseek-ai/dsh-jobs-local"
+          ],
+          "belowThreshold[0].score": 2,
+          "belowThreshold[1].score": 1,
+          "belowThreshold[2].score": 1,
+          "belowThreshold[*].isMatch": false
+        },
+        "mdExpect": {
+          "contains": [
+            "> **本入口是「池内降噪」，不是语义搜索**",
+            "管理+1（通用）",
+            "### 未过门槛（有命中但**不是匹配**）"
+          ],
+          "lastLine": "goal: 1 候选 / 池 206（registry 7 ｜ catalog 195 ｜ 已装 4）"
+        },
+        "why": [
+          "live-guard = 30：抖音 4（desc+kw）、音直 2（desc）、直播 7（名称+desc+kw）、预管 5（名称+kw）、管理 1（名称，通用词 3→⌊1.5⌋=1）、抖音直 2、音直播 2、预管理 5、接抖音直 0（0 命中不计）、抖音直播 2",
+          "C.3 的 32 分里「管理」占 3；C.3.1 降权后占 1 → 总分 30（其余词非通用，权重不变）",
+          "C.3 时代「5 条 catalog 模块靠『管理』上榜」现在全部出局：它们只命中通用词「管理」→ 规则 C 硬否决（**即使 Σ 过 6 也不算**）。C.3.1 后它们的分数是 2（dsh-plugin-manager：名称+desc，原始 5 → ⌊2.5⌋=2）与 1（其余 4 条仅 desc，原始 2 → ⌊1⌋=1）",
+          "接抖 / 接抖音 被噪声词过滤丢弃（池内 0 次、长度 <4）；「做」是停用字 → 含「做」的滑窗（播做/做预/直播做/做预管理…）全部被丢弃",
+          "音直 虽然看着像废词，但它在 live-guard 描述「接入抖音直**播**弹幕」里真实出现（抖音直播 → 音直）→ 规则 D 只丢「池内 0 次」的词，所以它保留；这是可解释的噪音，命中词列会如实写出来",
+          "gatedOutTotal=5 但 belowThreshold 只列前 3（= GOAL_CLOSEST_N）：按 Σ 降序、同分按包名升序（cmp 是码点比较，所以 @deepseek-ai/* 排在 dsh-mcp-panel 前面）"
+        ]
+      },
+      {
+        "id": "fixture-goal-installed-true",
+        "c32": "superseded：依赖夹具 registry 条目 → 现在不可用；同一条口径（已装给结论 / 未装必须 unknown）在真实数据上由 c32-goal-embedded-real 的 uninstalledPermission 断言覆盖",
+        "command": "node tools/lab-analyze.mjs --registry fixtures/registry-sample.json --goal \"夹具\" --profile fixtures/catalog-profile --json",
+        "exitCode": 0,
+        "expect": {
+          "candidates[0].pkg": "lab-fixture-ok",
+          "candidates[0].source": "registry",
+          "candidates[0].installed": true,
+          "candidates[0].alsoIn": ["installed"],
+          "candidates[0].permission": "无",
+          "candidates[0].nextStep": "用 lab-drift/--explain 复核"
+        },
+        "why": "同一条目同时在 registry 与已装池 → 保留高优先源 registry、installed 置 true；已装包给四档结论（夹具目录里没有 .js → 「无」），与「未装必须 unknown」形成对照"
+      },
+      {
+        "id": "fixture-search-live",
+        "c32": "superseded：夹具 registry 不可用 → 「命中 1 条 lab-fixture-live-guard」不再成立；真实数据基准见 c32.positive.c32-search-real",
+        "command": "node tools/lab-analyze.mjs --registry fixtures/registry-sample.json --search 直播 --profile fixtures/catalog-profile --json",
+        "exitCode": 0,
+        "expect": {
+          "results[0].pkg": "lab-fixture-live-guard",
+          "results[0].source": "registry",
+          "results[0].installed": false,
+          "matchBySource.registry": 1,
+          "matchBySource.catalog": 0,
+          "matchBySource.installed": 0,
+          "pool.registry": 7,
+          "pool.catalog": 195,
+          "pool.installed": 4
+        },
+        "mdExpect": { "lastLine": "匹配 1 条 / 池 206（registry 7 ｜ catalog 195 ｜ 已装 4）" },
+        "why": "catalog 195 条里没有「直播」，已装夹具包也没有；命中只可能来自 registry —— 这就是 C.3 要补的第三方来源"
+      },
+      {
+        "id": "fixture-unknown-registry-covered",
+        "c32": "superseded：夹具 registry 不可用 → registry 已覆盖 / descMismatch 两条断言不再成立；真实数据上改看「registry 命中且有 descriptionZh」这条口径（RULES §12.1.7）",
+        "command": "node tools/lab-analyze.mjs --registry fixtures/registry-sample.json --unknown --profile fixtures/catalog-profile --json",
+        "exitCode": 0,
+        "expect": {
+          "summary.installedTotal": 4,
+          "summary.p1": 3,
+          "summary.p2": 0,
+          "summary.p3": 0,
+          "summary.registryCovered": 1,
+          "summary.descMismatch": 1,
+          "rows[pkg=lab-fixture-ok].severity": "—",
+          "rows[pkg=lab-fixture-ok].registryMatch": "exact",
+          "rows[pkg=lab-fixture-ok].descMismatch": true,
+          "rows[pkg=lab-fixture-vague].severity": "P1",
+          "rows[pkg=lab-fixture-marketing].severity": "P1",
+          "rows[pkg=lab-fixture-short].severity": "P1"
+        },
+        "mdExpect": { "lastLine": "unknown: 3 个包本机说不清它是干什么的" },
+        "why": "lab-fixture-ok 被 registry 描述覆盖 → 严重度「—」（不再是 P3）；本地描述与 registry 描述字面不同 → descMismatch=true。另 3 条 registry 里没有 → 仍按 P1（没有描述/营销词/过短）"
+      },
+      {
+        "id": "fixture-unknown-null-desc-not-covered",
+        "c32": "superseded：同上（夹具 registry 不可用）；「有条目但无描述 ≠ 有描述」这条口径已写进 RULES §12.1.7 与 §12.2.3，不依赖夹具",
+        "why": "反证：registry 有条目但**没有描述** ≠ 「registry 有描述」；lab-fixture-null-desc 不装在本机，只能用 --search/--goal 观察，这里用 search 命中它来证明它确实在池子里",
+        "command": "node tools/lab-analyze.mjs --registry fixtures/registry-sample.json --search 只有名字 --profile fixtures/catalog-profile --json",
+        "exitCode": 0,
+        "expect": { "results[0].pkg": "lab-fixture-null-desc", "results[0].description": null, "results[0].source": "registry" }
+      }
+    ],
+    "realEnvironment": [
+      {
+        "id": "real-goal-embedded",
+        "command": "node tools/lab-analyze.mjs --goal \"我想学嵌入式，从连板子到画 PCB\"",
+        "exitCode": 0,
+        "precondition": "data/registry.json 不存在（本会话无法联网抓取）；data/catalog.json 可读；profile 可读",
+        "expect": {
+          "pool.registry": 0,
+          "pool.catalog": 195,
+          "pool.installed": "14（= --unknown 的 installedTotal 同口径；若某个声明包的目录缺失则为 13，工具会在告警里点名，不猜）",
+          "pool.total": "209（= 0 + 195 + 14；目录缺失时相应减 1）",
+          "tokens": "必含 嵌入 / 学嵌入式 / pcb；「嵌入式」「入式」在本机 catalog 的 name+desc+keywords 里 0 次 → 规则 D 丢弃（若某个已装包描述里恰好含「嵌入式」，它们会保留 —— 那就以实际输出为准）",
+          "tokensDropped[*].token": "必含 学嵌 / 学嵌入 / 连板 / 板子 / 连板子；「嵌入式」「入式」是否在其中取决于上一条",
+          "note": "真实环境没有 registry 快照 → 池内 name+description+keywords 里没有「嵌入式/入式」（catalog 只有 dsh-library 的「本地嵌入零模型下载」）→ 按规则 D 被丢；夹具用例（有 registry 的 embed-blink）里它们是保留的。**这正是「池内降噪」的含义**：同一个目标，池子不同，词表就不同",
+          "belowThreshold": "必含 @deepseek-ai/dsh-library（Σ2，仅「嵌入」命中 desc，isMatch=false）；若候选为空则它会出现在 closest 里",
+          "candidates[*]": "每一条都必须过门禁：有长词命中 或 ≥2 个不同词 或 Σ≥6（C.3.1 前后写法不同：现在不会再出现 Σ2 的候选）",
+          "candidates[*].permission": "未装包必须为「unknown（未安装，本地无代码）」；已装包为四档之一"
+        },
+        "mdExpect": {
+          "contains": ["> **本入口是「池内降噪」，不是语义搜索**", "registry: **不可用**", "goal: "],
+          "lastLinePrefix": "goal: "
+        },
+        "why": "registry 未落快照 → 这一源记 0 条并给出「先跑 _registry.mjs --write」的告警；**不代替市场编造候选**。池子总数 = 0 + 195 + 已装数。dsh-library 只撞「嵌入」→ 三条门禁全不过 → 只出现在「未过门槛/最接近」栏（C.3.1 的关键回归点）"
+      },
+      {
+        "id": "real-goal-live",
+        "command": "node tools/lab-analyze.mjs --goal \"接抖音直播做预管理\"",
+        "exitCode": 0,
+        "expect": {
+          "pool.total": "209（0 + 195 + 14，同上不写死）",
+          "tokens": "必含 管理 / 接抖音直 / 抖音直播（长度 ≥4 的词即使池内 0 次也保留）；「抖音/音直/直播/预管/抖音直/音直播/预管理」这些 <4 字的碎片在本机 catalog 里 0 次 → 被丢（若某个已装包描述里出现，它们会保留 —— 以实际输出为准）",
+          "tokensDropped[*].token": "必含 接抖 / 接抖音",
+          "matchedTotal": "0–2（C.3.1 前是 >= 5，全是「管理」；现在「管理-only」条目被规则 C 硬否决，本机池里又几乎没有「直播/抖音」条目）",
+          "candidates[*].matchedTokens": "不得只有通用词（管理/设置/任务/服务/系统/配置/面板/工具/助手/插件/功能/支持/自定/接口/数据）",
+          "belowThresholdOrClosest": "必含撞「管理」的官方模块（例 @deepseek-ai/dsh-plugin-manager、dsh-mcp-panel），且 isMatch=false + 写明「只命中通用词」"
+        },
+        "mdExpect": {
+          "contains": ["> **本入口是「池内降噪」，不是语义搜索**", "只命中通用词（已 ×0.5 降权"],
+          "lastLinePrefix": "goal: "
+        },
+        "why": "C.3.1 之前：8 条候选、命中词全是「管理」（用户实测截图就是这个问题）→ 现在本机池里没有「直播/抖音」条目，所以最多 0–2 条候选；其余全部落进「未过门槛（不是匹配）」并写明原因。判读标准是「候选的命中词列」+「末行池子总数」，不是「有没有候选」"
+      },
+      {
+        "id": "real-goal-no-match",
+        "command": "node tools/lab-analyze.mjs --goal zzzqqq",
+        "exitCode": 0,
+        "expect": { "matchedTotal": 0, "candidates.length": 0, "closest.length": 0, "pool.registry": 0, "pool.catalog": 195 },
+        "mdExpect": {
+          "contains": ["池中无匹配", "不硬凑候选"],
+          "lastLinePrefix": "goal: 0 候选 / 池 "
+        },
+        "why": "zzzqqq 是本机池里绝对不存在的词（连 2 字片段 zz/zq/qq 也没有）→ 必须 0 候选 + 明说「不硬凑」+ 仍给池子总数（末行形如 goal: 0 候选 / 池 209（registry 0 ｜ catalog 195 ｜ 已装 14））。这是「无匹配」路径的确定性用例"
+      },
+      {
+        "id": "real-search-live",
+        "command": "node tools/lab-analyze.mjs --search 直播",
+        "exitCode": 0,
+        "expect": { "results.length": 0, "pool.registry": 0, "pool.catalog": 195 },
+        "mdExpect": {
+          "contains": ["池中无匹配"],
+          "lastLinePrefix": "匹配 0 条 / 池 "
+        },
+        "why": "C.2 的 --search 只会搜目录 → 0 命中；C.3 之后仍然是 0（registry 未落快照），但**现在会明说 registry 缺位**，而不是让人以为「市场里真的没有」"
+      }
+    ],
+    "negative": [
+      {
+        "id": "goal-empty",
+        "command": "node tools/lab-analyze.mjs --goal \"\"",
+        "exitCode": 1,
+        "stderrContains": "--goal 需要一句目标"
+      },
+      {
+        "id": "goal-and-search",
+        "command": "node tools/lab-analyze.mjs --goal 嵌入式 --search 嵌入式",
+        "exitCode": 1,
+        "stderrContains": "一次只能用一种"
+      },
+      {
+        "id": "goal-all-stopwords",
+        "command": "node tools/lab-analyze.mjs --goal \"我想了一个能怎么\" --registry fixtures/registry-sample.json",
+        "exitCode": 1,
+        "stderrContains": "分词后没有可用词",
+        "why": "整句全是停用字 → 分词结果为空；报错比返回「0 候选」诚实（否则看起来像「池里没有」，其实是「没给词」）"
+      },
+      {
+        "id": "goal-all-noise-tokens",
+        "command": "node tools/lab-analyze.mjs --goal \"接抖\" --registry fixtures/registry-sample.json --profile fixtures/catalog-profile",
+        "exitCode": 1,
+        "stderrContains": "全部是噪声",
+        "why": "C.3.1 规则 D 的反例：`接抖` 在池内 name+description+keywords 出现 0 次且长度 2<4 → 被丢弃；过滤后词表为空 → 报错 exit 1（比返回假的「0 候选」诚实）。完整报文：--goal 分词后没有可用词：1 个滑窗词全部是噪声（…）→ 换一句带实词的目标（丢弃：接抖）"
+      },
+      {
+        "id": "registry-missing-not-fatal-for-goal",
+        "command": "node tools/lab-analyze.mjs --goal 嵌入式 --registry fixtures/no-such-registry.json",
+        "exitCode": 0,
+        "mdExpect": { "contains": ["registry: **不可用**"] },
+        "why": "registry 只是三源之一，缺了要**降级并告警**（catalog/已装仍在），不像 --search/--unknown 依赖的 catalog 那样 exit 1"
+      }
+    ]
+  },
+  "acceptanceSummary": [
+    "**C.3.3（现行，本项目最后一轮）**：`--goal` 三层全展示（强 ≥0.5 / 弱 0.2–0.5 / 仅字面 <0.2，折叠最多 10 条）；C.3.1 的三条硬门槛取消，通用词否决保留；`## 词表诊断` 逐词给命中条目数 + idf（0 命中标『未命中』+ 4 组硬编码同义词提示）；命中词权重 ×idf（clamp(ln(池/(1+命中条目数)),0.5,3.0)，两位小数，`词+权重（idf x.xx）` 可复算）；`--search` 行为一字未改（matched 行里**不出现 `idf` 键**、无 `diagnostics` 段）",
+    "C.3.3 · 嵌入式目标：`--goal \"我想学嵌入式，从连板子到画 PCB\"` → 三段 + 词表诊断 + 候选 top10；`嵌入式` 若 0 命中必须标 `未命中`；elapsedMs 目标 < 2000ms（本会话未实测）",
+    "C.3.3 · 反噪声：「管理-only」因通用词否决 + 覆盖率 <0.2 落进「仅字面命中」，不得进强/弱匹配、不得进候选表",
+    "_registry: --from-file 夹具 → count 7 / malformed 1 / 未知字段 3；--check 通过；非 loopback 一律 exit 1「仅允许 loopback」",
+    "C.3.1 · 上限：默认 64 MiB（DEFAULT_MAX_BYTES）；--max-bytes 接受 128MiB / 134217728，非法值 exit 1「参数 --max-bytes 取值不合法」；超限仍 req.destroy() + 中止，不写半截快照",
+    "C.3.1 · 大响应：bytes > 8 MiB 时多打一行「大响应: <bytes> 字节 … ｜ 解析出 count <N> 条」；快照 source 里同时有 bytes 与 maxBytes",
+    "--search 直播（夹具）→ 命中 registry 1 条，带 source=registry + installed=false；末行池子 206",
+    "C.3.1 · --goal 嵌入式（夹具）→ 2 候选：embed-blink Σ15 / pcb-draw Σ7；dsh-library Σ2 落进「未过门槛」；末行 goal: 2 候选",
+    "C.3.1 · --goal 接抖音直播做预管理（夹具）→ 1 候选（live-guard Σ30）；5 条「管理-only」全部进「未过门槛」；末行 goal: 1 候选",
+    "--goal 夹具 → lab-fixture-ok installed=true 且权限为四档（「无」）→ 证明「已装给结论 / 未装给 unknown」两条口径同时成立",
+    "--goal zzzqqq（真实环境）→ 0 候选 + 池中无匹配 + 不硬凑 + 末行池子 209",
+    "C.3.1 · --goal 真实环境接抖音直播做预管理 → 候选 0–2 条（不再是 8 条「管理」）；报告头部有「本入口是『池内降噪』，不是语义搜索」",
+    "--unknown 加 registry（夹具）→ lab-fixture-ok 严重度「—」且 descMismatch=true；另 3 条仍 P1；末行 unknown: 3"
+  ]
+}

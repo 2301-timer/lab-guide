@@ -1,0 +1,28 @@
+{
+  "name": "lab-fixture-shellcred",
+  "version": "0.2.0",
+  "description": "夹具：有 child_process 起子进程 + 读取凭据环境变量的假插件（权限档应判为「全量（含命令或凭据）」）",
+  "license": "MIT",
+  "type": "module",
+  "main": "lib/index.js",
+  "keywords": [
+    "dsh-plugin",
+    "shell",
+    "terminal",
+    "命令执行"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "engines": {
+    "node": ">=22",
+    "dsh": ">=0.2.0-rc.1 <0.3.0-0"
+  },
+  "fixture": {
+    "purpose": "权限四扫必须同时命中「命令执行」与「凭据」两格 → 结论「全量（含命令或凭据）」",
+    "rowFace": "insert 的 id = lab-fixture-shellcred，与官方行/其他已装包都不重名 → 无 row 争用（ok）",
+    "note": "不是可加载的 DSH 插件；代码里的凭据只读环境变量名，不落任何值。"
+  }
+}

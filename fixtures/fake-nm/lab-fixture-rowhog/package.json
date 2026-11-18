@@ -1,0 +1,28 @@
+{
+  "name": "lab-fixture-rowhog",
+  "version": "0.1.0",
+  "description": "夹具：故意 insert 官方宿主 row id（plugin-manager）的假插件，用于断言 lab-analyze 的 COLLIDES_WITH_HOST=danger",
+  "license": "MIT",
+  "type": "module",
+  "main": "lib/index.js",
+  "keywords": [
+    "dsh-plugin",
+    "plugin-manager",
+    "插件管家",
+    "market"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "engines": {
+    "node": ">=22",
+    "dsh": ">=0.2.0-rc.1 <0.3.0-0"
+  },
+  "fixture": {
+    "purpose": "抢 row id：insert id = plugin-manager（官方 @deepseek-ai/dsh-base 已声明同名行）",
+    "permissionFace": "只写本地文件（catalog.json / 备份目录），无命令执行、无网络、无凭据 → 权限档应为「写入」",
+    "note": "不是可加载的 DSH 插件，只用于 lab-analyze.mjs 的断言；不会被任何宿主加载。"
+  }
+}

@@ -1,0 +1,368 @@
+{
+  "fixture": "lab-guide C.1 静态分析器（tools/lab-analyze.mjs）断言基线",
+  "note": [
+    "本文件是**期望输出**，不是运行时输入；lab-analyze 不会读它。",
+    "用例命令均在仓库根下执行；--json 便于机器断言，md 用于人读。",
+    "不断言 generatedAt / 绝对路径 / 告警文案 / evidence 的自然语言部分；只断言结构字段与结论。",
+    "官方 row id 条数（hostRows.rowIds / scanAll.officialRowIds）**不写死数字**：它等于 data/host-rows.json 去重后的 id 数，工具会把实际值打在报告头，刷新快照后数字会变。",
+    "口径出处：五段字段见 ../docs/RULES.md §10.6；权限四档见 §10.3；row 争用判定见 §10.4。",
+    "C.3.2（2026-11-16）：单包分析的 identity 新增第 1 级数据源 registry（RULES §12.1.7）→ identity 多出 `registry` 对象、`summaryLang` 字段，identity.source 可能变成 \"registry\"。**但本文件的断言前提是「没有 data/registry.json 快照」**：快照未生成时 registry 不可用 → identity.source 仍是 catalog / package-json / readme，下面这些断言全部照旧成立。若本机已写入快照且该包在真实市场里，`identity.source: \"catalog\"` 这类断言应按新优先级改判为 \"registry\"（不是回归）。"
+  ],
+  "positiveCases": [
+    {
+      "id": "rowhog-host-collision",
+      "why": "夹具 1：insert id 与官方宿主行同名 → COLLIDES_WITH_HOST 必须是 danger；权限面只有文件写",
+      "command": "node tools/lab-analyze.mjs --from-dir fixtures/fake-nm/lab-fixture-rowhog --host-rows fixtures/fake-host-rows.json --profile fixtures/fake-profile --lab fixtures/fake-lab --json",
+      "exitCode": 0,
+      "expect": {
+        "identity.localData": true,
+        "identity.name": "lab-fixture-rowhog",
+        "identity.version": "0.1.0",
+        "identity.license": "MIT",
+        "identity.engines.dsh": ">=0.2.0-rc.1 <0.3.0-0",
+        "identity.readme.sentences.length": 3,
+        "permissions.conclusion": "写入",
+        "permissions.rules[fileWrite].total": ">= 1",
+        "permissions.rules[exec].total": 0,
+        "permissions.rules[credentials].total": 0,
+        "rowContention.selfIds[0].id": "plugin-manager",
+        "rowContention.collidesWithHost[0].id": "plugin-manager",
+        "rowContention.collidesWithHost[0].severity": "danger",
+        "rowContention.collidesWithHost[0].confidence": "confirmed",
+        "rowContention.collidesWithPlugin.length": 0,
+        "rowContention.severity": "danger",
+        "suggestion.suggestedLabel": "base",
+        "verdict.verdict": "不装"
+      }
+    },
+    {
+      "id": "shellcred-full-permission",
+      "why": "夹具 2：child_process + 凭据 → 权限档「全量（含命令或凭据）」；row id 不撞 → ok",
+      "command": "node tools/lab-analyze.mjs --from-dir fixtures/fake-nm/lab-fixture-shellcred --host-rows fixtures/fake-host-rows.json --profile fixtures/fake-profile --lab fixtures/fake-lab --json",
+      "exitCode": 0,
+      "expect": {
+        "identity.localData": true,
+        "identity.name": "lab-fixture-shellcred",
+        "permissions.conclusion": "全量（含命令或凭据）",
+        "permissions.rules[exec].total": ">= 2（child_process 与 spawn 各 1 处以上）",
+        "permissions.rules[credentials].total": ">= 1",
+        "permissions.rules[fileWrite].total": 0,
+        "rowContention.selfIds[0].id": "lab-fixture-shellcred",
+        "rowContention.collidesWithHost.length": 0,
+        "rowContention.collidesWithPlugin.length": 0,
+        "rowContention.severity": "ok",
+        "suggestion.suggestedLabel": "dev",
+        "verdict.verdict": "观察"
+      }
+    },
+    {
+      "id": "real-plugin-manager",
+      "why": "验收主角：它就是「抢行」事故当事人（官方 @deepseek-ai/dsh-base 的 plugin-manager 行被它顶掉）",
+      "command": "node tools/lab-analyze.mjs @txc2768651338/dsh-plugin-manager --json",
+      "precondition": "<DSH_HOME>/profiles/<profile>/node_modules/@txc2768651338/dsh-plugin-manager 存在；data/host-rows.json 可读",
+      "exitCode": 0,
+      "expect": {
+        "identity.localData": true,
+        "identity.name": "@txc2768651338/dsh-plugin-manager",
+        "identity.version": "0.7.0",
+        "identity.license": "MIT",
+        "identity.description": "非空（原文：插件管家——图形化插件管理…）",
+        "identity.repository": "https://github.com/2768651338/dsh-plugin-manager",
+        "identity.dependencyCount": 0,
+        "identity.peerDependencyCount": 4,
+        "identity.engines.dsh": null,
+        "permissions.conclusion": "全量（含命令或凭据）",
+        "permissions.rules[fileWrite].total": ">= 1（writeFileSync / mkdirSync）",
+        "permissions.rules[credentials].total": ">= 1（字符串常量与 JWT 校验里的 credential/token 也会命中：命中即报，不推断意图）",
+        "rowContention.selfIds[0].id": "plugin-manager",
+        "rowContention.collidesWithHost[0].id": "plugin-manager",
+        "rowContention.collidesWithHost[0].officialPkgs": ["@deepseek-ai/dsh-base"],
+        "rowContention.collidesWithHost[0].severity": "danger",
+        "rowContention.collidesWithHost[0].confidence": "likely（来源是 data/host-rows.json 快照，非实时 asar 读取）",
+        "rowContention.severity": "danger",
+        "suggestion.suggestedLabel": "base",
+        "verdict.verdict": "不装"
+      },
+      "mdExpect": {
+        "lastLineContains": "verdict: 不装 ｜ severity=danger",
+        "section3Contains": "COLLIDES_WITH_HOST（抢宿主行，danger）— 1 条"
+      }
+    },
+    {
+      "id": "real-scan-all",
+      "why": "--scan-all 必须能一眼看出「谁抢了谁的行」：plugin-manager 这一行同时挂官方与第三方",
+      "command": "node tools/lab-analyze.mjs --scan-all --json",
+      "precondition": "profile 可读；data/host-rows.json 可读",
+      "exitCode": 0,
+      "expect": {
+        "scanAll.summary.danger": ">= 1",
+        "scanAll.summary.thirdPartyInsertIds": 18,
+        "scanAll.summary.thirdPartyPackages": "^13$ 或 ^14$（skills-manager 是否在 dependencies 里会造成 ±1；以实际 profile 为准）",
+        "scanAll.summary.officialRowIds": "与 data/host-rows.json 去重后的 id 数相同（> 0）",
+        "scanAll.rows[rowId=plugin-manager].severity": "danger",
+        "scanAll.rows[rowId=plugin-manager].official": true,
+        "scanAll.rows[rowId=plugin-manager].declaredBy": "必须同时含 @deepseek-ai/dsh-base(官方/insert，来自 host-rows 快照) 与 @txc2768651338/dsh-plugin-manager(第三方/insert)",
+        "scanAll.rows[rowId=web].severity": "info",
+        "scanAll.rows[rowId=web].declaredBy": "含 @anysearch/anysearch-dsh(第三方/仅覆盖) 与 @deepseek-ai/dsh-base(官方/insert)",
+        "scanAll.rows[rowId=system-prompt].severity": "info",
+        "scanAll.rows[rowId=system-prompt].declaredBy": "含 dsh-purge-community(第三方/仅覆盖)",
+        "scanAll.rows[rowId=redteam-store].dangling": true
+      },
+      "negativeControl": "若 summary.thirdPartyInsertIds === 0，说明 patch 没解析进来（不是没有冲突）；工具会把这句话写进 warnings，验收人据此判断而不是当成「真无冲突」"
+    },
+    {
+      "id": "real-skills-manager",
+      "why": "任务卡点名的第三个验收：description、权限四档、建议 label 都要给出来",
+      "command": "node tools/lab-analyze.mjs @michengai/dsh-skills-manager --json",
+      "precondition": "<DSH_HOME>/profiles/<profile>/node_modules/@michengai/dsh-skills-manager 存在",
+      "exitCode": 0,
+      "expect": {
+        "identity.localData": true,
+        "identity.version": "1.4.8",
+        "identity.license": "Apache-2.0",
+        "identity.description": "DSH Skills Manager — 在 DeepSeek Harness 中统一加载并安全管理本机 Agent Skills · Load and safely manage local Agent Skills in DSH",
+        "identity.engines.dsh": ">=0.2.0-rc.1 <0.3.0-0",
+        "identity.dependencyCount": 1,
+        "permissions.scanned": true,
+        "permissions.rules.length": 4,
+        "permissions.conclusion": "四档之一（本机实测值以工具输出为准，不预先编造）",
+        "rowContention.selfIds[0].id": "skills-manager",
+        "rowContention.collidesWithHost.length": 0,
+        "rowContention.collidesWithPlugin.length": 0,
+        "suggestion.suggestedLabel": "base",
+        "suggestion.matchedTerms": "含 skills manager（来自 description「Skills Manager」）",
+        "verdict.disclaimer": "本结论仅基于本地静态证据，未联网、未安装实测"
+      }
+    },
+    {
+      "id": "not-local",
+      "why": "不联网契约：本地没有这个包时，必须 localData:false + 明确提示，不许编造",
+      "command": "node tools/lab-analyze.mjs @nope/definitely-not-installed --profile fixtures/fake-profile --lab fixtures/fake-lab --json",
+      "exitCode": 0,
+      "expect": {
+        "identity.localData": false,
+        "identity.name": null,
+        "permissions.scanned": false,
+        "rowContention.selfIds.length": 0,
+        "warnings": "包含「本地无此包」与「本工具不联网」",
+        "verdict.verdict": "观察"
+      },
+      "mdExpect": {
+        "section1Contains": "本地无此包，本工具不联网"
+      }
+    }
+  ],
+  "negativeCases": [
+    {
+      "id": "write-guard-profile",
+      "why": "只读红线：写目标落进 profile 必须被拒绝（复用 _lifecycle.assertSafeLifecyclePath）",
+      "command": "node tools/lab-analyze.mjs @txc2768651338/dsh-plugin-manager --write-report \"<DSH_HOME>/profiles/<profile>/out.md\"",
+      "exitCode": 1,
+      "stderrContains": "拒绝写入"
+    },
+    {
+      "id": "write-guard-lab",
+      "why": "lab 只读",
+      "command": "node tools/lab-analyze.mjs @txc2768651338/dsh-plugin-manager --write-report \"<LAB_DIR>/x.md\"",
+      "exitCode": 1,
+      "stderrContains": "拒绝写入"
+    },
+    {
+      "id": "write-guard-patch-yml",
+      "why": "永不写 cordis.patch.yml",
+      "command": "node tools/lab-analyze.mjs --scan-all --write-report out/cordis.patch.yml",
+      "exitCode": 1,
+      "stderrContains": "cordis.patch.yml"
+    },
+    {
+      "id": "no-target",
+      "why": "缺目标要报错，不能悄悄跑 --scan-all",
+      "command": "node tools/lab-analyze.mjs",
+      "exitCode": 1,
+      "stderrContains": "缺少目标"
+    },
+    {
+      "id": "scan-all-with-pkg",
+      "why": "两种模式互斥",
+      "command": "node tools/lab-analyze.mjs --scan-all @michengai/dsh-skills-manager",
+      "exitCode": 1,
+      "stderrContains": "--scan-all 不与包名"
+    },
+    {
+      "id": "pkg-and-from-dir",
+      "why": "两种目标互斥",
+      "command": "node tools/lab-analyze.mjs dshmarket --from-dir fixtures/fake-nm/lab-fixture-rowhog",
+      "exitCode": 1,
+      "stderrContains": "不能同时给"
+    },
+    {
+      "id": "json-and-md",
+      "why": "输出格式互斥",
+      "command": "node tools/lab-analyze.mjs @michengai/dsh-skills-manager --json --md",
+      "exitCode": 1,
+      "stderrContains": "不能同时使用"
+    },
+    {
+      "id": "from-dir-no-package-json",
+      "why": "--from-dir 指向没有 package.json 的目录要报错，不能猜",
+      "command": "node tools/lab-analyze.mjs --from-dir fixtures",
+      "exitCode": 1,
+      "stderrContains": "package.json"
+    },
+    {
+      "id": "host-rows-missing",
+      "why": "官方 row 数据读不到时不许猜：collidesWithHost 记空、verdict 最多「观察」、并出告警",
+      "command": "node tools/lab-analyze.mjs @txc2768651338/dsh-plugin-manager --host-rows fixtures/no-such-host-rows.json --json",
+      "exitCode": 0,
+      "expect": {
+        "hostRows.available": false,
+        "hostRows.source": "explicit-missing",
+        "rowContention.officialRowIds": null,
+        "rowContention.collidesWithHost.length": 0,
+        "verdict.verdict": "观察",
+        "warnings": "包含「官方 row 数据读不到」"
+      }
+    }
+  ],
+  "c2Cases": {
+    "note": [
+      "C.2 新增能力的期望输出；口径见 ../docs/RULES.md §11（§11.1 数据源优先级 / §11.2 README / §11.3 --unknown / §11.4 --search）。",
+      "本会话 pwsh 不可用 → 这些期望由「源码 + 真实 profile/README 逐行推演」得到，**未经实跑**（见 README §6）。",
+      "目录 195 条、unparsed 0 是源码事实（lib/index.js 第 29–1003 行 = 195 个键 × 每项严格 4 行，块内无 \\\" 转义），不是猜的。",
+      "catalog.json 的 195 条是**逐条转写**的（不是脚本产物），所以 --check 是这两条里最该先跑的一条。"
+    ],
+    "cases": [
+      {
+        "id": "catalog-extract",
+        "command": "node tools/_catalog.mjs --json",
+        "exitCode": 0,
+        "expect": {
+          "package": "@txc2768651338/dsh-plugin-manager",
+          "version": "0.7.0",
+          "hostVersion": "0.2.2-rc.1",
+          "count": 195,
+          "countInRange": [150, 220],
+          "unparsedCount": 0,
+          "categoryCount": 12
+        }
+      },
+      {
+        "id": "catalog-check",
+        "command": "node tools/_catalog.mjs --check",
+        "exitCode": 0,
+        "expect": { "check.ok": true, "check.sourceCount": 195, "check.diffTotal": 0 },
+        "negativeControl": "把 data/catalog.json 里任意一条 desc 改一个字 → 该命令必须 exit 1 并打印该条差异（不许静默通过）"
+      },
+      {
+        "id": "catalog-missing",
+        "command": "node tools/lab-analyze.mjs --search 定时器 --catalog fixtures/no-such-catalog.json --catalog-source fixtures/no-such-source.js",
+        "exitCode": 1,
+        "stderrContains": "离线目录不可用"
+      },
+      {
+        "id": "search-miss",
+        "command": "node tools/lab-analyze.mjs --search 嵌入式 --json",
+        "exitCode": 0,
+        "expect": { "results.length": 0, "matchBySource.catalog": 0, "pool.catalog": 195, "pool.registry": 0 },
+        "mdExpect": { "contains": ["池中无匹配", "最接近的 3 条"], "lastLinePrefix": "匹配 0 条 / 池 " },
+        "why": "目录里含「嵌入」的只有 dsh-library 的「本地嵌入零模型下载」，不含「嵌入式」；已装包描述里也没有 → 必须如实报无匹配",
+        "c3Note": "C.3 起 --search 是三源合并：末行由「匹配 N 条 / 目录共 M 条」改为「匹配 N 条 / 池 M（registry A ｜ catalog B ｜ 已装 C）」，并新增「最接近 3 条」（RULES §12.2）"
+      },
+      {
+        "id": "search-hit",
+        "command": "node tools/lab-analyze.mjs --search 定时器 --json",
+        "exitCode": 0,
+        "expect": { "matchBySource.catalog": ">= 1", "results[0].pkg": "@deepseek-ai/cordis-plugin-timer", "results[0].name": "定时器服务", "results[0].source": "catalog", "results[0].installed": false },
+        "why": "正例：证明搜索不是「永远返回空」。C.3 起结果字段由 matches[]（catalog 专用）改为 results[]（带 source/installed）"
+      },
+      {
+        "id": "unknown-real",
+        "command": "node tools/lab-analyze.mjs --unknown --only-installed --json",
+        "exitCode": 0,
+        "expect": {
+          "summary.installedTotal": 14,
+          "summary.p1": 0,
+          "summary.p2": 7,
+          "summary.p3": 6,
+          "summary.trusted": 1,
+          "rows[pkg=@txc2768651338/dsh-plugin-manager].severity": "—",
+          "rows[pkg=@txc2768651338/dsh-plugin-manager].catalogMatch": "basename",
+          "rows[pkg=@michengai/dsh-skills-manager].severity": "P3",
+          "rows[pkg=@michengai/dsh-skills-manager].catalogHit": false,
+          "rows[pkg=meow-memory].severity": "P2"
+        },
+        "mdExpect": { "lastLine": "unknown: 0 个包本机说不清它是干什么的" },
+        "why": "P1=0 是因为 13 个目录外包都写了 ≥15 字、无营销词的描述；末行计数只数 P1（RULES §11.3）"
+      },
+      {
+        "id": "unknown-fixture-p1",
+        "command": "node tools/lab-analyze.mjs --unknown --only-installed --profile fixtures/catalog-profile --json",
+        "exitCode": 0,
+        "expect": {
+          "summary.installedTotal": 4,
+          "summary.p1": 3,
+          "summary.p3": 1,
+          "rows[pkg=lab-fixture-vague].severity": "P1",
+          "rows[pkg=lab-fixture-marketing].severity": "P1",
+          "rows[pkg=lab-fixture-short].severity": "P1",
+          "rows[pkg=lab-fixture-ok].severity": "P3"
+        },
+        "mdExpect": { "lastLine": "unknown: 3 个包本机说不清它是干什么的" },
+        "why": "P1 在真实数据里没有样本，必须靠夹具覆盖：无 description / 营销词 / 3 字"
+      },
+      {
+        "id": "identity-catalog-basename",
+        "command": "node tools/lab-analyze.mjs @txc2768651338/dsh-plugin-manager --json",
+        "exitCode": 0,
+        "expect": {
+          "identity.source": "catalog",
+          "identity.displayName": "官方插件管理服务",
+          "identity.catalog.hit": true,
+          "identity.catalog.match": "basename",
+          "identity.catalog.key": "@deepseek-ai/dsh-plugin-manager",
+          "identity.name": "@txc2768651338/dsh-plugin-manager",
+          "identity.readme.sentences.length": 3
+        },
+        "readmeExpect": {
+          "firstSentenceStartsWith": "Settings → Plugins → Plugin Manager",
+          "mustNotContain": ["Every plugin finally speaks for itself", "Overview · Compatibility", "Español"]
+        }
+      },
+      {
+        "id": "identity-package-json",
+        "command": "node tools/lab-analyze.mjs @michengai/dsh-skills-manager --json",
+        "exitCode": 0,
+        "expect": {
+          "identity.source": "package-json",
+          "identity.catalog.hit": false,
+          "identity.displayName": null
+        },
+        "readmeExpect": {
+          "firstSentenceStartsWith": "统一管理本机与项目技能",
+          "mustNotContain": ["DSH Skills Manager", "简体中文", "English"]
+        }
+      }
+    ]
+  },
+  "untestedBranches": [
+    {
+      "branch": "COLLIDES_WITH_PLUGIN（warn：两个第三方包抢同一 row id）",
+      "status": "本机真实数据无样本",
+      "why": "本机 18 条第三方 insert 里没有任何两条同名（唯一重名的是 plugin-manager，对手是官方 dsh-base）→ 该分支只有代码自核，没有实跑证据",
+      "howToCover": "加第三个夹具包，insert 与 lab-fixture-rowhog 同名的 id；或等真实环境出现两包重名"
+    },
+    {
+      "branch": "--include-tests 与测试目录跳过",
+      "status": "未执行",
+      "why": "本会话 pwsh 不可用；夹具里没有 test/ 目录，跳过计数只能靠白盒核对"
+    }
+  ],
+  "acceptanceSummary": [
+    "rowhog → COLLIDES_WITH_HOST(danger, plugin-manager) + 权限档「写入」+ verdict 不装",
+    "shellcred → 权限档「全量（含命令或凭据）」+ row 争用 ok + verdict 观察",
+    "真实 @txc2768651338/dsh-plugin-manager → COLLIDES_WITH_HOST(danger, plugin-manager, 官方 @deepseek-ai/dsh-base) + 权限档「全量」+ verdict 不装",
+    "真实 --scan-all → 矩阵里 plugin-manager 一行同时挂官方与第三方，severity=danger；另有 web / system-prompt 两条 info（仅覆盖）",
+    "真实 @michengai/dsh-skills-manager → 有 description、有四档结论、suggestedLabel=base",
+    "本地无此包 → localData:false + 「本地无此包，本工具不联网」提示；exit 0（不是失败）"
+  ]
+}

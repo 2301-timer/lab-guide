@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-11-15T06:10:00Z",
+  "hostVersion": "fixture-0.0.0",
+  "source": {
+    "kind": "fixture",
+    "note": "夹具专用，只含 3 个 id：plugin-manager（断言 COLLIDES_WITH_HOST=danger）、web / system-prompt（断言「覆盖官方行」=info）。真实数据用 ../data/host-rows.json。"
+  },
+  "note": "夹具快照：不读 app.asar、不联网。为了让夹具断言与真实宿主版本解耦，这里只放断言需要的最小集合。",
+  "rows": {
+    "@deepseek-ai/dsh-base": [
+      "plugin-manager",
+      "web",
+      "system-prompt"
+    ]
+  }
+}
